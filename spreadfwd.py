@@ -52,8 +52,10 @@ def monitor_adapters(file_path, first_port, interval):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="UDP Message Forwarder")
-    parser.add_argument('--port_in', type=int, required=True, help='Port to listen for incoming messages')
-    parser.add_argument('--first_port_out', type=int, required=True, help='First port to use for output')
+
+    parser.add_argument('port_in', type=int, help='Port to listen for incoming messages')
+    parser.add_argument('first_port_out', type=int, help='First port to use for output')
+
     args = parser.parse_args()
 
     # Global variables
