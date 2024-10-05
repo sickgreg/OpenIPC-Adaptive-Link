@@ -1,0 +1,38 @@
+Given the command-line arguments --port_in 5000 --first_port_out 9999 and the content of the /etc/default/wifibroadcast file as WFB_NICS="greg1 greg2 greg3", here's how the script will operate step-by-step:
+
+Parsing Adapters:
+
+The script will open /etc/default/wifibroadcast, read the content, and use the regular expression to extract the adapter names between the quotes.
+In this case, it will find the string greg1 greg2 greg3 and split it into a list of adapter names: ['greg1', 'greg2', 'greg3'].
+Assigning Output Ports:
+
+The script will then generate output ports starting from 9999.
+Given that there are three adapter names, the output ports will be:
+9999 (for greg1)
+10000 (for greg2)
+10001 (for greg3)
+So, output_ports will be [9999, 10000, 10001].
+Listening for Incoming Messages:
+
+The script will bind to the input port 5000 and start listening for incoming UDP messages.
+Whenever it receives a message on port 5000, it will forward it to the output ports in a round-robin manner:
+The first message received will go to port 9999 (for greg1).
+The second message will go to port 10000 (for greg2).
+The third message will go to port 10001 (for greg3).
+The fourth message will go back to port 9999, and this cycle will continue.
+Monitoring for Changes:
+
+The script will check the modification time of /etc/default/wifibroadcast every 10 seconds.
+If there are any changes detected (for example, if the content of the file is updated to include more or fewer adapters), it will re-parse the file, update the output_ports list, and continue forwarding messages using the new ports.
+The new ports will be recalculated based on the updated list of adapters, starting from 9999.
+Example Scenario:
+If you send a UDP message to port 5000, the following will happen:
+1st message → Sent to 9999 (for greg1)
+2nd message → Sent to 10000 (for greg2)
+3rd message → Sent to 10001 (for greg3)
+4th message → Sent to 9999 (back to greg1)
+... and so forth.
+Important Notes:
+Ensure that the adapters specified (e.g., greg1, greg2, and greg3) correspond to valid services listening on the respective output ports.
+The script uses localhost to forward messages, which means the receiving services should be running on the same machine.
+Ensure you have the necessary permissions to read from /etc/default/wifibroadcast, especially if you are running this on a system with stricter access controls (like Linux).
