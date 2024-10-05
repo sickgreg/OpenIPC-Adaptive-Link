@@ -8,9 +8,9 @@ Listens on a single port and forwards messages to the same number of ports as th
 Example
 
 Run
-python3 spreadfwd.py --port_in 9000 --first_port_out 9999
-  port 9000 is the UDP port set up in adaptive_link.py script
-  If in /etc/default/wifibroadcast file we have WFB_NICS="greg1 greg2 greg3", the program will send to port 9999,10000,10001, so set --first_port_out to the same port you start wfb_tx on
+python3 spreadfwd.py 9000 9999
+ in port 9000 is the UDP port set up in adaptive_link.py script
+  If in /etc/default/wifibroadcast file we have WFB_NICS="greg1 greg2 greg3", the program will send to port 9999,10000,10001, so set --first_port_out to the same port you start wfb_tx on (9999)
 
 --- txprofiles.conf ---
 Lives on camera: /etc/txprofiles.conf
