@@ -1,7 +1,7 @@
 # OpenIPC-Adaptive-Link
 Greg's Adaptive-Link - Files for OpenIPC camera and Radxa Zero 3w/e ground station
 
---- ALink42c ---
+`ALink42c`
 
 
 udp listener and video-link profile changer/manager for OpenIPC
