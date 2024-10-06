@@ -21,8 +21,13 @@ eg
 `wfb_rx -c 127.0.0.1 -u 5000 -K /etc/drone.key -p 1 -i 7669207 wlan0 &`
 
 
+--- adaptive_link_greg3.py ---
 
+Run this on ground station - Radxa, in  my case
 
+https://github.com/sickgreg/steam-groundstations/blob/master/adaptive-link/adaptive_link_greg3.py
+
+`python3 adaptive_link_greg3.py`
 
 --- spreadfwd.py ----
 Runs on ground station
@@ -33,11 +38,11 @@ Example
 
 Run
 
-`python3 spreadfwd.py 9000 9999`
+`python3 spreadfwd.py 9998 9999`
 
- in port 9000 is the UDP port set up in adaptive_link.py script
+ 9998 is the UDP port you set in adaptive_link_greg3.py script
  
-  If in `/etc/default/wifibroadcast` file we have `WFB_NICS="greg1 greg2 greg3"`, the program will send to port 9999,10000,10001, so set --first_port_out to the same port you start wfb_tx on (9999)
+  If in `/etc/default/wifibroadcast` file we have `WFB_NICS="rtl1 rtl2 rtl3"`, the program will send to port 9999,10000,10001, so set --first_port_out to the same port you start wfb_tx on (eg 9999)
   
 
 --- txprofiles.conf ---
