@@ -32,7 +32,8 @@ https://github.com/sickgreg/steam-groundstations/blob/master/adaptive-link/adapt
 `python3 adaptive_link_greg3.py`
 
 You also need to be running wfb_tx on the ground station
-```#/bin/bash
+```
+#/bin/bash
 
 if [ -e /etc/default/wifibroadcast ]; then
   . /etc/default/wifibroadcast
@@ -67,7 +68,8 @@ NOTE: Be careful with PWR settings.  These examples are for pushing the BL-8812E
 Example contents of `/etc/txprofiles.conf`
 
 
-```999 - 999 long 0 12 15 3332 5.0 61 0,0,0,0
+```
+999 - 999 long 0 12 15 3332 5.0 61 0,0,0,0
 1000 - 1150 long 0 12 15 3333 5.0 60 0,0,0,0
 1151 - 1300 long 1 12 15 6667 5.0 59 0,0,0,0
 1301 - 1700 long 2 12 15 10000 5.0 58 0,0,0,0
