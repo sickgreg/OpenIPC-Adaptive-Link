@@ -42,6 +42,28 @@ fi
 sudo wfb_tx -p 1 -u 9999 -K /etc/gs.key -R 456000 -B20 -M 0 -S 1 -L 1 -G long -k 1 -n 2 -i 7669207 -f data $WFB_NICS
 ```
 
+**--- setpower.sh ---**
+
+Don't forget to set output power for your card(s) so the drone can hear messages
+
+In my case, i'm using 3 rtl8812au's and have been using this script (which also restarts everything, maybe do this first)
+
+```
+#/bin/bash
+
+# usage ./setpower.sh <pwrlvl>
+echo Stopping wifibroadcast
+sudo systemctl stop wifibroadcast
+echo Unloading 88XXau_wfb  module
+sudo modprobe -r 88XXau_wfb &&
+echo Loading 88XXau_wfb module with power level $1
+sudo modprobe 88XXau_wfb rtw_tx_pwr_idx_override=$1
+echo Restarting openipc.service
+sudo systemctl restart openipc.service
+echo Starting wifibroadcast
+sudo systemctl start wifibroadcast
+```
+
 **--- spreadfwd.py ----**
 Runs on ground station
 
