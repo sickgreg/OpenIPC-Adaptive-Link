@@ -65,7 +65,7 @@ NOTE: Be careful with PWR settings.  These examples are for pushing the BL-8812E
 Example contents of /etc/txprofiles.conf
 
 
-`999 - 999 long 0 12 15 3332 5.0 61 0,0,0,0
+```999 - 999 long 0 12 15 3332 5.0 61 0,0,0,0
 
 1000 - 1150 long 0 12 15 3333 5.0 60 0,0,0,0
 
@@ -75,6 +75,6 @@ Example contents of /etc/txprofiles.conf
 
 1701 - 1950 long 3 12 15 12500 5.0 56 0,0,0,0
 
-1951 - 2001 short 3 12 15 14000 5.0 56 0,0,0,0`
+1951 - 2001 short 3 12 15 14000 5.0 56 0,0,0,0```
 
 The values are: rangestart - rangeend guard_interval FECN FECK Bitrate GOP PWR ROI-QP-definition 
