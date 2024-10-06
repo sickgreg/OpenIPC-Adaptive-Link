@@ -64,6 +64,9 @@ echo Starting wifibroadcast
 sudo systemctl start wifibroadcast
 ```
 
+Usage
+`./setpower.sh 40`
+
 **--- spreadfwd.py ----**
 Runs on ground station
 
