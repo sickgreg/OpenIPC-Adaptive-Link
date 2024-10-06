@@ -75,7 +75,7 @@ Example contents of `/etc/txprofiles.conf`
 1951 - 2001 short 3 12 15 14000 5.0 56 0,0,0,0
 ```
 
-The values are: rangestart - rangeend guard_interval FECN FECK Bitrate GOP PWR ROI-QP-definition
+The values are: `rangestart - rangeend guard_interval FECN FECK Bitrate GOP PWR ROI-QP-definition`
 
 
 **--- ALink.conf ---**
