@@ -8,8 +8,10 @@ udp listener and video-link profile changer/manager for OpenIPC
 
 
 copy to /usr/bin/ALink42c on OpenIPC camera and make it executable
+
 ALink42c --help for command line options
-copy txprofiles.conf to /etc (don't have power set too high for your card in here)
+
+Copy txprofiles.conf to /etc (don't have power set too high for your card in here)
 (future) copy ALink.conf to /etc/ALink.conf for general settings / custom mode-changing execution strings
 I'm running /usr/bin/ALink42c & from /etc/rc.local startup script.  You also need to run wfb_rx on the camera,
 
