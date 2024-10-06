@@ -12,7 +12,9 @@ copy to `/usr/bin` on OpenIPC camera and make it executable
 `ALink42c --help` for command line options
 
 Copy `txprofiles.conf` to `/etc` (don't have power set too high for your card in here)
-(future) copy ALink.conf to `/etc` for general settings / custom mode-changing execution strings
+
+(future) copy ALink.conf to `/etc` for general settings / custom mode-changing execution strings.
+
 I'm running /usr/bin/ALink42c & from /etc/rc.local startup script.  You also need to run wfb_rx on the camera,
 
 eg
