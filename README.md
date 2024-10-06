@@ -15,12 +15,12 @@ Copy `txprofiles.conf` to `/etc` (don't have power set too high for your card in
 
 (future) copy ALink.conf to `/etc` for general settings / custom mode-changing execution strings.
 
-I'm running /usr/bin/ALink42c & from /etc/rc.local startup script.  You also need to run wfb_rx on the camera,
+I'm running `/usr/bin/ALink42c &` from `/etc/rc.local` startup script.  You also need to run wfb_rx on the camera,
 
 eg
 
 
-`wfb_rx -c 127.0.0.1 -u 5000 -K /etc/drone.key -p 1 -i 7669207 wlan0 &`
+`wfb_rx -c 127.0.0.1 -u 5000 -K /etc/drone.key -p 1 -i 7669207 wlan0 &` also currently running this from `/etc/rc.local` startup script
 
 
 **--- adaptive_link_greg3.py ---**
@@ -61,7 +61,7 @@ Run
 **--- txprofiles.conf ---**
 
 Lives on camera: `/etc/txprofiles.conf`
-Stores video / netowrk settings for all the different modes used in adaptive link
+Stores video / mcs settings for all the different modes used in adaptive link
 
 NOTE: Be careful with PWR settings.  These examples are for pushing the BL-8812EU2 (square-blue) fairly hard.
 
