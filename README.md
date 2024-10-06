@@ -4,7 +4,7 @@
 **ALink42c**
 
 
-udp listener and video-link profile changer/manager for OpenIPC
+udp listener and video-link mode changer for OpenIPC
 
 
 copy to `/usr/bin` on OpenIPC camera and make it executable
