@@ -37,10 +37,9 @@ You also need to be running wfb_tx on the ground station
 if [ -e /etc/default/wifibroadcast ]; then
   . /etc/default/wifibroadcast
 fi
-```
 
 sudo wfb_tx -p 1 -u 9999 -K /etc/gs.key -R 456000 -B20 -M 0 -S 1 -L 1 -G long -k 1 -n 2 -i 7669207 -f data $WFB_NICS
-`
+```
 
 **--- spreadfwd.py ----**
 Runs on ground station
