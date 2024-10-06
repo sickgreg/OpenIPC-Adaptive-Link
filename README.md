@@ -1,24 +1,24 @@
 # OpenIPC-Adaptive-Link
 Greg's Adaptive-Link - Files for OpenIPC camera and Radxa Zero 3w/e ground station
 
-`ALink42c`
+ALink42c
 
 
 udp listener and video-link profile changer/manager for OpenIPC
 
 
-copy to /usr/bin/ALink42c on OpenIPC camera and make it executable
+copy to `/usr/bin` on OpenIPC camera and make it executable
 
-ALink42c --help for command line options
+`ALink42c --help` for command line options
 
-Copy txprofiles.conf to /etc (don't have power set too high for your card in here)
-(future) copy ALink.conf to /etc/ALink.conf for general settings / custom mode-changing execution strings
+Copy `txprofiles.conf` to `/etc` (don't have power set too high for your card in here)
+(future) copy ALink.conf to `/etc` for general settings / custom mode-changing execution strings
 I'm running /usr/bin/ALink42c & from /etc/rc.local startup script.  You also need to run wfb_rx on the camera,
 
 eg
 
 
-wfb_rx -c 127.0.0.1 -u 5000 -K /etc/drone.key -p 1 -i 7669207 wlan0 &
+`wfb_rx -c 127.0.0.1 -u 5000 -K /etc/drone.key -p 1 -i 7669207 wlan0 &`
 
 
 
@@ -33,16 +33,16 @@ Example
 
 Run
 
-python3 spreadfwd.py 9000 9999
+`python3 spreadfwd.py 9000 9999`
 
  in port 9000 is the UDP port set up in adaptive_link.py script
  
-  If in /etc/default/wifibroadcast file we have WFB_NICS="greg1 greg2 greg3", the program will send to port 9999,10000,10001, so set --first_port_out to the same port you start wfb_tx on (9999)
+  If in `/etc/default/wifibroadcast` file we have `WFB_NICS="greg1 greg2 greg3"`, the program will send to port 9999,10000,10001, so set --first_port_out to the same port you start wfb_tx on (9999)
   
 
 --- txprofiles.conf ---
 
-Lives on camera: /etc/txprofiles.conf
+Lives on camera: `/etc/txprofiles.conf`
 Stores video / netowrk settings for all the different modes used in adaptive link
 
 NOTE: Be careful with PWR settings.  These examples are for pushing the BL-8812EU2 (square-blue) fairly hard.
@@ -50,7 +50,7 @@ NOTE: Be careful with PWR settings.  These examples are for pushing the BL-8812E
 Example contents of /etc/txprofiles.conf
 
 
-999 - 999 long 0 12 15 3332 5.0 61 0,0,0,0
+`999 - 999 long 0 12 15 3332 5.0 61 0,0,0,0
 
 1000 - 1150 long 0 12 15 3333 5.0 60 0,0,0,0
 
@@ -60,6 +60,6 @@ Example contents of /etc/txprofiles.conf
 
 1701 - 1950 long 3 12 15 12500 5.0 56 0,0,0,0
 
-1951 - 2001 short 3 12 15 14000 5.0 56 0,0,0,0
+1951 - 2001 short 3 12 15 14000 5.0 56 0,0,0,0`
 
 The values are: rangestart - rangeend guard_interval FECN FECK Bitrate GOP PWR ROI-QP-definition 
