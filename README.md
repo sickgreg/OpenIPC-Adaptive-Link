@@ -1,7 +1,7 @@
 # OpenIPC-Adaptive-Link
 **Greg's Adaptive-Link - Files for OpenIPC camera and Radxa Zero 3w/e ground station**
 
-**ALink42c**
+**--- ALink42h ---**
 
 
 udp listener and video-link mode changer for OpenIPC
@@ -9,13 +9,15 @@ udp listener and video-link mode changer for OpenIPC
 
 copy to `/usr/bin` on OpenIPC camera and make it executable
 
-`ALink42c --help` for command line options
+`ALink42h --help` for command line options
 
-Copy `txprofiles.conf` to `/etc` (don't have power set too high for your card in here)
+Copy `txprofiles.conf` to `/etc` (Warning: contains tx power level settings.  Don't set your specific device' power too high)
 
-(future) copy ALink.conf to `/etc` for general settings / custom mode-changing execution strings.
+Copy `alink.conf` to `/etc` for general settings / custom mode-changing execution strings.
 
-I'm running `/usr/bin/ALink42c &` from `/etc/rc.local` startup script.  You also need to run wfb_rx on the camera,
+Note: It won't start up without those files
+
+I'm running `/usr/bin/ALink42h &` from `/etc/rc.local` startup script. You also need to run wfb_rx on the camera,
 
 eg
 
@@ -105,7 +107,36 @@ Example contents of `/etc/txprofiles.conf`
 The values are: `rangestart - rangeend guard_interval FECN FECK Bitrate GOP PWR ROI-QP-definition`
 
 
-**--- ALink.conf ---**
+**--- alink.conf ---**
 
-soon
+Lives on camera: `/etc/alink.conf`
 
+```
+# How important is rssi vs snr
+rssi_weight=0.4
+snr_weight=0.6
+
+# Hold times (in seconds)
+hold_fallback_mode_s=2
+hold_modes_down_s=2
+
+# Minimum time between profile changes (in milliseconds)
+min_between_changes_ms=100
+
+# How often to re-apply profile periodically
+periodically_apply_s=10
+
+# Command templates
+# Don't change these unless you know what you are doing
+# Placeholders (ie %d, %s) are replaced in the program
+
+powerCommand="iw dev wlan0 set txpower fixed %d"
+mcsCommand="wfb_tx_cmd 8000 set_radio -B 20 -G %s -S 1 -L 1 -M %d"
+bitrateCommand="curl -s 'http://localhost/api/v1/set?video0.bitrate=%d'"
+gopCommand="curl -s 'http://localhost/api/v1/set?video0.gopSize=%f'"
+fecCommand="wfb_tx_cmd 8000 set_fec -k %d -n %d"
+roiCommand="curl -s 'http://localhost/api/v1/set?fpv.roiQp=%s'"
+idrCommand="curl localhost/request/idr"
+msposdCommand="echo '%ld s %d M:%d %s F:%d/%d P:%d G:%.1f&L30&F28 CPU:&C &Tc' >/tmp/MSPOSD.msg"
+#timeElapsed, profile->setBitrate, profile->setMCS, profile->setGI, profile->setFecK, profile->setFecN, profile->wfbPower, profile->setGop
+```
