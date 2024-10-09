@@ -1,15 +1,14 @@
 # OpenIPC-Adaptive-Link
 **Greg's Adaptive-Link - Files for OpenIPC camera and Radxa Zero 3w/e ground station**
 
-**--- ALink42h ---**
-
+**--- ALink42l ---**
 
 udp listener and video-link mode changer for OpenIPC
 
 
 copy to `/usr/bin` on OpenIPC camera and make it executable
 
-`ALink42h --help` for command line options
+`ALink42l --help` for command line options
 
 Copy `txprofiles.conf` to `/etc` (Warning: contains tx power level settings.  Don't set your specific device' power too high)
 
@@ -17,7 +16,7 @@ Copy `alink.conf` to `/etc` for general settings / custom mode-changing executio
 
 Note: It won't start up without those files
 
-I'm running `/usr/bin/ALink42h &` from `/etc/rc.local` startup script. You also need to run wfb_rx on the camera,
+I'm running `/usr/bin/ALink42l &` from `/etc/rc.local` startup script. You also need to run wfb_rx on the camera,
 
 eg
 
@@ -112,31 +111,28 @@ The values are: `rangestart - rangeend guard_interval FECN FECK Bitrate GOP PWR 
 Lives on camera: `/etc/alink.conf`
 
 ```
-# How important is rssi vs snr
-rssi_weight=0.4
-snr_weight=0.6
 
-# Hold times (in seconds)
-hold_fallback_mode_s=2
-hold_modes_down_s=2
+rssi_weight=0.3
+snr_weight=0.7
+fallback_ms=1000
+hold_fallback_mode_s=3
+min_between_changes_ms=150
+hold_modes_down_s=4
+idr_every_change=false
+roi_focus_mode=false
+request_keyframe_interval_ms=100
+hysteresis_percent=15
 
-# Minimum time between profile changes (in milliseconds)
-min_between_changes_ms=100
 
-# How often to re-apply profile periodically
-periodically_apply_s=10
-
-# Command templates
-# Don't change these unless you know what you are doing
-# Placeholders (ie %d, %s) are replaced in the program
-
+# Command templates - Don't change these unless you know what you are doing
 powerCommand="iw dev wlan0 set txpower fixed %d"
 mcsCommand="wfb_tx_cmd 8000 set_radio -B 20 -G %s -S 1 -L 1 -M %d"
 bitrateCommand="curl -s 'http://localhost/api/v1/set?video0.bitrate=%d'"
 gopCommand="curl -s 'http://localhost/api/v1/set?video0.gopSize=%f'"
 fecCommand="wfb_tx_cmd 8000 set_fec -k %d -n %d"
 roiCommand="curl -s 'http://localhost/api/v1/set?fpv.roiQp=%s'"
-idrCommand="curl localhost/request/idr"
+idrCommand="echo 'IDR 0' | nc localhost 4000"
+#idrCommand="curl localhost/request/idr"
 msposdCommand="echo '%ld s %d M:%d %s F:%d/%d P:%d G:%.1f&L30&F28 CPU:&C &Tc' >/tmp/MSPOSD.msg"
 #timeElapsed, profile->setBitrate, profile->setMCS, profile->setGI, profile->setFecK, profile->setFecN, profile->wfbPower, profile->setGop
 ```
