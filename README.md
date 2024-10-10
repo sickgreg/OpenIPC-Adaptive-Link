@@ -1,14 +1,14 @@
 # OpenIPC-Adaptive-Link
 **Greg's Adaptive-Link - Files for OpenIPC camera and Radxa Zero 3w/e ground station**
 
-**--- ALink42l ---**
+**--- ALink42m ---**
 
 udp listener and video-link mode changer for OpenIPC
 
 
 copy to `/usr/bin` on OpenIPC camera and make it executable
 
-`ALink42l --help` for command line options
+`ALink42m --help` for command line options
 
 Copy `txprofiles.conf` to `/etc` (Warning: contains tx power level settings.  Don't set your specific device' power too high)
 
@@ -16,23 +16,41 @@ Copy `alink.conf` to `/etc` for general settings / custom mode-changing executio
 
 Note: It won't start up without those files
 
-I'm running `/usr/bin/ALink42l &` from `/etc/rc.local` startup script. You also need to run wfb_rx on the camera,
+I'm running `/usr/bin/ALink42m &` from `/etc/rc.local` startup script. You also need wfb-ng tunnel or run wfb_rx on the camera,
 
 eg
 
+I put
+```
+# Tunnel pair
+wfb_rx -c 127.0.0.1 -u 5800 -K /etc/drone.key -p 160 -i 7669206 wlan0 > /dev/null &
+wfb_tx -p 32 -u 5801 -K /etc/drone.key -R 2097152 -B20 -M 0 -S 1 -L 1 -G long -k 1 -n 2 -i 7669206 -f data wlan0 > /dev/null &
+wfb_tun -T 0 &
+# Although this may work out of the box already if you sysupgrade (?)
+# Then
+sleep 2
+/usr/bin/ALink42m
+```
 
-`wfb_rx -c 127.0.0.1 -u 5000 -K /etc/drone.key -p 1 -i 7669207 wlan0 &` also currently running this from `/etc/rc.local` startup script
+Old Way - for reference
+
+`wfb_rx -c 127.0.0.1 -u 5000 -K /etc/drone.key -p 1 -i 7669207 wlan0 &`
 
 
 **--- adaptive_link_greg3.py ---**
 
 Run this on ground station - Radxa, in  my case
 
-https://github.com/sickgreg/steam-groundstations/blob/master/adaptive-link/adaptive_link_greg3.py
+https://github.com/sickgreg/steam-groundstations/blob/master/adaptive-link/adaptive_link_greg3.py (keep an eye on it for newer versions)
 
+`python3 adaptive_link_greg3.py --udp_ip 10.5.0.2 --udp_port 9999`
+
+for no tunnel
 `python3 adaptive_link_greg3.py`
 
-You also need to be running wfb_tx on the ground station
+You also need wfb-tunnel on ground station... default worked for me
+
+Or the old way (non-tunnel)
 ```
 #/bin/bash
 
