@@ -1,14 +1,14 @@
 # OpenIPC-Adaptive-Link
 **Greg's Adaptive-Link - Files for OpenIPC camera and Radxa Zero 3w/e ground station**
 
-**--- ALink42m ---**
+**--- ALink42n ---**
 
 udp listener and video-link mode changer for OpenIPC
 
 
 copy to `/usr/bin` on OpenIPC camera and make it executable
 
-`ALink42m --help` for command line options
+`ALink42n --help` for command line options
 
 Copy `txprofiles.conf` to `/etc` (Warning: contains tx power level settings.  Don't set your specific device' power too high)
 
@@ -16,7 +16,7 @@ Copy `alink.conf` to `/etc` for general settings / custom mode-changing executio
 
 Note: It won't start up without those files
 
-I'm running `/usr/bin/ALink42m &` from `/etc/rc.local` startup script. You also need wfb-ng tunnel or run wfb_rx on the camera,
+I'm running `/usr/bin/ALink42n &` from `/etc/rc.local` startup script. You also need wfb-ng tunnel or run wfb_rx on the camera,
 
 eg
 
