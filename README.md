@@ -1,5 +1,56 @@
 # OpenIPC-Adaptive-Link
-**Greg's Adaptive-Link - Files for OpenIPC camera and Radxa Zero 3w/e ground station**
+**Greg's Adaptive-Link - For OpenIPC Camera and Radxa Zero 3w/e Ground Station**
+
+1. Upgrade camera to latest OpenIPC with wfb_tun included (Warning: All files will be overwritten)
+
+`sysupgrade -k -r -n`
+
+2. Get installer and run
+
+```
+curl -L -o install_adaptive_link.sh https://raw.githubusercontent.com/sickgreg/OpenIPC-Adaptive-Link/refs/heads/main/install_adaptive_link.sh
+chmod +x install_adaptive_link.sh
+./install_adaptive_link.sh drone install
+```
+3. Install on ground station
+
+Still working on installer.
+
+For now just save this and run it on ground station.  Also remember to increase your gs tx power. AF1's @ 40 works for me
+
+https://github.com/sickgreg/steam-groundstations/blob/master/adaptive-link/adaptive_link_greg3.py
+
+`python3 adaptive_link_greg3.py`
+
+A file named config.ini will be created on first launch
+
+
+Make sure to set udp port to 9999 and udp IP to 10.5.0.10 (drone's IP) in config.ini
+
+
+
+
+**--- How to WinSCP to your drone via gs over tunnel ---**
+
+```
+# On drone set up a route to your LAN (sub 192xxx with yours). This should persist after reboot
+ip route add 192.168.8.0/24 via 10.5.0.1
+
+# On GS set up IP forwarding temporarily:
+sudo sysctl -w net.ipv4.ip_forward=1
+# Make Permenant:
+sudo nano /etc/sysctl.conf #uncomment or add this line: 
+net.ipv4.ip_forward = 1
+sudo sysctl -p
+# On GS (Sub 192.x.x.x with your LAN). This seems to not persist after reboot
+sudo iptables -t nat -A POSTROUTING -o gs-wfb -s 192.168.8.0/24 -j MASQUERADE
+
+# On Windows as Administrator (Sub 192xxx with your GS IP) - persists after reboot
+cmd
+route add 10.5.0.0 mask 255.255.255.0 192.168.8.116 -p
+```
+
+**More details**
 
 **--- ALink42p ---**
 
