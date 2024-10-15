@@ -20,7 +20,7 @@ Same as above with gs
 ```
 curl -L -o install_adaptive_link.sh https://raw.githubusercontent.com/sickgreg/OpenIPC-Adaptive-Link/refs/heads/main/install_adaptive_link.sh
 chmod +x install_adaptive_link.sh
-./install_adaptive_link.sh gs install
+sudo ./install_adaptive_link.sh gs install
 ```
 
 Service will be added to systemd.  stop | start | disable | enable | status with `sudo systemctl stop adaptive_link`
