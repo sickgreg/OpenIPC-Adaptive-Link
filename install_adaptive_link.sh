@@ -1,15 +1,25 @@
 #!/bin/sh
 
+echo_red()   { printf "\033[1;31m$*\033[m\n"; }
+echo_green() { printf "\033[1;32m$*\033[m\n"; }
+echo_blue()  { printf "\033[1;34m$*\033[m\n"; }
+
 UDP_IP=10.5.0.10
 UDP_PORT=9999
+
+
+if [ $(id -u) -ne "0" ]; then
+	echo "Permission denied"
+	echo "sudo $0 $1 $2"
+	exit 1
+fi
 
 # drone or gs
 isSystem=$(grep -o "NAME=Buildroot" /etc/os-release)
 
-
 if [ "$1" = "gs" ]; then
 	if [ ! -z $isSystem ]; then
-		echo "Error: It doesn't look like it's an SBC"
+		echo_red "Error: It doesn't look like it's an SBC"
 		exit 1
 	fi
 
@@ -22,17 +32,15 @@ if [ "$1" = "gs" ]; then
 		echo "Installing Adaptive Link"
 		
 		if [ -f $FILE ];then
-			echo "$FILE_NAME is already installed"
+			echo_red   "$FILE_NAME is already installed"
 			exit 1
 		fi
 
 		
-        sudo apt install -y dos2unix
-        sudo wget https://raw.githubusercontent.com/sickgreg/steam-groundstations/refs/heads/master/adaptive-link/adaptive_link_greg3.py -O $FILE
-        sudo chmod +x $FILE
-		sudo dos2unix $FILE
+        wget https://raw.githubusercontent.com/sickgreg/steam-groundstations/refs/heads/master/adaptive-link/adaptive_link_greg3.py -O $FILE
+        chmod +x $FILE
 		
-        cat <<EOF | sudo tee $PATH_SERVICE
+        cat <<EOF | tee $PATH_SERVICE
 [Unit]
 Description=OpenIPC_AdaptiveLink
 
@@ -46,52 +54,53 @@ WantedBy=multi-user.target
 EOF
 		echo ""
 		echo "Run $FILE --config $FILE_CONF &"
-		sudo $FILE --config $FILE_CONF & sleep 5
+		$FILE --config $FILE_CONF & sleep 5
 		echo "kill pid $!"
-		sudo kill $!
+		kill $!
 		
 		if [ ! -f $FILE_CONF ]; then	
-			echo "Error: File ${FILE_CONF} not found" 
-			exit 0
+			echo_red "Error: File ${FILE_CONF} not found" 
+			exit 1
 		fi
 		
-		sudo sed -i 's/udp_ip.*/udp_ip = '$UDP_IP'/' $FILE_CONF
-		sudo sed -i 's/udp_port.*/udp_port = '$UDP_PORT'/' $FILE_CONF
+		sed -i 's/udp_ip.*/udp_ip = '$UDP_IP'/' $FILE_CONF
+		sed -i 's/udp_port.*/udp_port = '$UDP_PORT'/' $FILE_CONF
 
-		sudo systemctl enable $FILE_NAME.service
-		sudo systemctl start $FILE_NAME.service
-		sudo systemctl status $FILE_NAME.service
+		systemctl enable $FILE_NAME.service
+		systemctl start $FILE_NAME.service
+		systemctl status $FILE_NAME.service
 		
-		echo "Configuration file ${FILE_CONF}"
+		echo_green "Configuration file ${FILE_CONF}"
 		
 	elif [ "$2" = "remove" ]; then
 		echo "Removing  Adaptive Link"
 		
-		sudo systemctl stop $FILE_NAME.service && echo "Wait..." && sleep 3
-		sudo systemctl status $FILE_NAME.service
-		sudo systemctl disable $FILE_NAME.service
+		systemctl stop $FILE_NAME.service && echo "Wait..." && sleep 3
+		systemctl status $FILE_NAME.service
+		systemctl disable $FILE_NAME.service
 		
-		sudo rm -f $FILE_CONF $FILE $PATH_SERVICE
+		rm -f $FILE_CONF $FILE $PATH_SERVICE
 	
 	elif [ "$2" = "update" ]; then	
 		echo "Updating Adaptive Link"
 		
-		sudo systemctl stop $FILE_NAME.service && echo "Wait..." && sleep 3
-		sudo systemctl status $FILE_NAME.service
+		systemctl stop $FILE_NAME.service && echo "Wait..." && sleep 3
+		systemctl status $FILE_NAME.service
 		
-		sudo wget https://raw.githubusercontent.com/sickgreg/steam-groundstations/refs/heads/master/adaptive-link/adaptive_link_greg3.py -O $FILE
-		sudo dos2unix $FILE
+		wget https://raw.githubusercontent.com/sickgreg/steam-groundstations/refs/heads/master/adaptive-link/adaptive_link_greg3.py -O $FILE
+		dos2unix $FILE
 		
-		sudo systemctl start $FILE_NAME.service 
-		sudo systemctl status $FILE_NAME.service
+		systemctl start $FILE_NAME.service 
+		systemctl status $FILE_NAME.service
 		
-		echo "The update is complete"
+		echo_green "The update is complete"
 	
 	fi
+	exit 0
 
 elif [ "$1" = "drone" ]; then
 	if [ -z $isSystem ]; then
-		echo "Error: It doesn't look like it's an Drone"
+		echo_red "Error: It doesn't look like it's an Drone"
 		exit 1
 	fi
 
@@ -105,7 +114,7 @@ elif [ "$1" = "drone" ]; then
 		echo "Installing Adaptive Link"
 		
 		if [ -f $FILE ];then
-			echo "$FILE_NAME is already installed"
+			echo_red "$FILE_NAME is already installed"
 			exit 1
 		fi
 		
@@ -120,11 +129,13 @@ elif [ "$1" = "drone" ]; then
 			sed -i -e '$i \'$FILE' --ip '$UDP_IP' --port '$UDP_PORT' &' /etc/rc.local
 		fi
 		
+		sed -i 's/tunnel=.*/tunnel=true/' /etc/datalink.conf
+		
 		# Outputs garbage to the console
 		#echo "Starting $FILE"
 		#$FILE --ip $UDP_IP --port $UDP_PORT < /dev/null &
 		
-		echo "Installation completed. Restart the system"
+		echo_green "Installation completed. Restart the system"
 			
 	elif [ "$2" = "remove" ]; then
 		echo "Removing Adaptive Link"
@@ -149,7 +160,7 @@ elif [ "$1" = "drone" ]; then
 		curl -L -o $TXPROFILE https://raw.githubusercontent.com/sickgreg/OpenIPC-Adaptive-Link/refs/heads/main/txprofiles.conf
 		curl -L -o $ALINK https://github.com/sickgreg/OpenIPC-Adaptive-Link/raw/refs/heads/main/alink.conf
 		
-		echo "The update is complete. Restart the system"
+		echo_green "The update is complete. Restart the system"
 	fi
 	
 	exit 0
