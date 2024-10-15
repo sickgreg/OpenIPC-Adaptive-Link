@@ -12,20 +12,20 @@ curl -L -o install_adaptive_link.sh https://raw.githubusercontent.com/sickgreg/O
 chmod +x install_adaptive_link.sh
 ./install_adaptive_link.sh drone install
 ```
+Settings (including power levels) can be set in `/etc/txprofiles.conf` and `/etc/alink.conf`
+
 3. Install on ground station
 
-Still working on installer.
+Same as above with gs
+```
+curl -L -o install_adaptive_link.sh https://raw.githubusercontent.com/sickgreg/OpenIPC-Adaptive-Link/refs/heads/main/install_adaptive_link.sh
+chmod +x install_adaptive_link.sh
+./install_adaptive_link.sh gs install
+```
 
-For now just save this and run it on ground station.  Also remember to increase your gs tx power. AF1's @ 40 works for me
+config file is `/etc/adaptive_link.conf`
 
-https://github.com/sickgreg/steam-groundstations/blob/master/adaptive-link/adaptive_link_greg3.py
-
-`python3 adaptive_link_greg3.py`
-
-A file named config.ini will be created on first launch
-
-
-Make sure to set udp port to 9999 and udp IP to 10.5.0.10 (drone's IP) in config.ini
+Make sure to set udp port to 9999 and udp IP to 10.5.0.10 (drone's IP) in adaptive_link.conf
 
 
 
