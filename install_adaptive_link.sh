@@ -32,7 +32,7 @@ if [ "$1" = "gs" ]; then
 		echo "Installing Adaptive Link"
 		
 		if [ -f $FILE ];then
-			echo_red   "$FILE_NAME is already installed"
+			echo_red   "$FILE_NAME is already installed. First, delete the program: '$0 gs remove'"
 			exit 1
 		fi
 
@@ -114,7 +114,7 @@ elif [ "$1" = "drone" ]; then
 		echo "Installing Adaptive Link"
 		
 		if [ -f $FILE ];then
-			echo_red "$FILE_NAME is already installed"
+			echo_red "$FILE_NAME is already installed. First, delete the program: '$0 drone remove'"
 			exit 1
 		fi
 		
