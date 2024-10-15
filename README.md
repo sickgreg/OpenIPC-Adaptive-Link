@@ -23,6 +23,8 @@ chmod +x install_adaptive_link.sh
 ./install_adaptive_link.sh gs install
 ```
 
+Service will be added to systemd.  stop | start | disable | enable | status with `sudo systemctl stop adaptive_link`
+
 config file is `/etc/adaptive_link.conf`
 
 Make sure to set udp port to 9999 and udp IP to 10.5.0.10 (drone's IP) in adaptive_link.conf
