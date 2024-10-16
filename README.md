@@ -52,6 +52,17 @@ cmd
 route add 10.5.0.0 mask 255.255.255.0 192.168.8.116 -p
 ```
 
+**--- Changing the rate at which wfb-ng talks to the gs script ---**
+
+You can add this to  `/etc/wifibroadcast.cfg` on gs
+
+Default is 1Hz (1000ms)
+```
+[common]
+log_interval = 200
+```
+
+
 **More details**
 
 **--- ALink42p ---**
