@@ -95,6 +95,11 @@ EOF
 	elif [ "$2" = "update" ]; then	
 		echo "Updating Adaptive Link"
 		
+		if [ ! -f $FILE ];then
+			echo_red   "$FILE_NAME not installed. To install, use: '$0 gs install'"
+			exit 1
+		fi
+		
 		systemctl stop $FILE_NAME.service && echo "Wait..." && sleep 3
 		systemctl status $FILE_NAME.service
 		
@@ -171,6 +176,11 @@ elif [ "$1" = "drone" ]; then
 	
 	elif [ "$2" = "update" ]; then	
 		echo "Updating Adaptive Link"
+		
+		if [ ! -f $FILE ];then
+			echo_red   "$FILE_NAME not installed. To install, use: '$0 drone install'"
+			exit 1
+		fi
 		
 		echo "killall $FILE_NAME"
 		killall $FILE_NAME && echo "Wait..." && sleep 1
