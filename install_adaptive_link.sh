@@ -76,7 +76,7 @@ EOF
 			echo "$(sed '/log_interval.*/c log_interval = '${LOG_INTERVAL}'' $WFBGS_CFG)" > $WFBGS_CFG
 		fi
 
-		systemctl enable wifibroadcast.service
+		systemctl restart wifibroadcast.service
 		systemctl enable $FILE_NAME.service
 		systemctl start $FILE_NAME.service
 		systemctl status $FILE_NAME.service
@@ -99,7 +99,15 @@ EOF
 		systemctl status $FILE_NAME.service
 		
 		wget https://raw.githubusercontent.com/sickgreg/steam-groundstations/refs/heads/master/adaptive-link/adaptive_link_greg3.py -O $FILE
-		dos2unix $FILE
+		
+		isLogInterval=$(grep -o "log_interval" ${WFBGS_CFG})
+		if [ -z $isLogInterval ]; then
+			echo "$(sed '/\[common\]/a log_interval = '${LOG_INTERVAL}'' $WFBGS_CFG)" > $WFBGS_CFG
+		else
+			echo "$(sed '/log_interval.*/c log_interval = '${LOG_INTERVAL}'' $WFBGS_CFG)" > $WFBGS_CFG
+		fi
+
+		systemctl restart wifibroadcast.service
 		
 		systemctl start $FILE_NAME.service 
 		systemctl status $FILE_NAME.service
