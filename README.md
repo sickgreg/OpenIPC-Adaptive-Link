@@ -1,5 +1,71 @@
 # OpenIPC-Adaptive-Link
-**Greg's Adaptive-Link - Files for OpenIPC camera and Radxa Zero 3w/e ground station**
+**Greg's Adaptive-Link - For OpenIPC Camera and Radxa Zero 3w/e Ground Station**
+
+1. Upgrade camera to latest OpenIPC with wfb_tun included (Warning: All files will be overwritten)
+
+`sysupgrade -k -r -n`
+
+2. Get installer and run
+
+```
+curl -L -o install_adaptive_link.sh https://raw.githubusercontent.com/sickgreg/OpenIPC-Adaptive-Link/refs/heads/main/install_adaptive_link.sh
+chmod +x install_adaptive_link.sh
+./install_adaptive_link.sh drone install
+```
+Settings (including power levels) can be set in `/etc/txprofiles.conf` and `/etc/alink.conf`
+
+3. Install on ground station
+
+Same as above with gs
+```
+curl -L -o install_adaptive_link.sh https://raw.githubusercontent.com/sickgreg/OpenIPC-Adaptive-Link/refs/heads/main/install_adaptive_link.sh
+chmod +x install_adaptive_link.sh
+sudo ./install_adaptive_link.sh gs install
+```
+
+Service will be added to systemd.  stop | start | disable | enable | status with `sudo systemctl stop adaptive_link`
+
+config file is `/etc/adaptive_link.conf`
+
+Make sure to set udp port to 9999 and udp IP to 10.5.0.10 (drone's IP) in adaptive_link.conf
+
+
+
+**--- Changing the rate at which wfb-ng talks to the gs script ---**
+
+You can add this to  `/etc/wifibroadcast.cfg` on gs
+
+Default is only 1Hz (1000ms).  200ms gives the script 5 rssi/snr/etc/etc updates per second
+```
+[common]
+log_interval = 200
+```
+
+
+
+
+**--- How to WinSCP to your drone via gs over tunnel ---**
+
+```
+# On drone set up a route to your LAN (sub 192xxx with yours). This should persist after reboot
+ip route add 192.168.8.0/24 via 10.5.0.1
+
+# On GS set up IP forwarding temporarily:
+sudo sysctl -w net.ipv4.ip_forward=1
+# Make Permenant:
+sudo nano /etc/sysctl.conf #uncomment or add this line: 
+net.ipv4.ip_forward = 1
+sudo sysctl -p
+# On GS (Sub 192.x.x.x with your LAN). This seems to not persist after reboot
+sudo iptables -t nat -A POSTROUTING -o gs-wfb -s 192.168.8.0/24 -j MASQUERADE
+
+# On Windows as Administrator (Sub 192xxx with your GS IP) - persists after reboot
+cmd
+route add 10.5.0.0 mask 255.255.255.0 192.168.8.116 -p
+```
+
+
+**More details**
 
 **--- ALink42p ---**
 
