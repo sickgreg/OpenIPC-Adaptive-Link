@@ -29,7 +29,15 @@ config file is `/etc/adaptive_link.conf`
 
 Make sure to set udp port to 9999 and udp IP to 10.5.0.10 (drone's IP) in adaptive_link.conf
 
+**--- Changing the rate at which wfb-ng talks to the gs script ---**
 
+You can add this to  `/etc/wifibroadcast.cfg` on gs
+
+Default is only 1Hz (1000ms).  200ms gives the script 5 rssi/snr/etc/etc updates per second
+```
+[common]
+log_interval = 200
+```
 
 
 **--- How to WinSCP to your drone via gs over tunnel ---**
@@ -50,16 +58,6 @@ sudo iptables -t nat -A POSTROUTING -o gs-wfb -s 192.168.8.0/24 -j MASQUERADE
 # On Windows as Administrator (Sub 192xxx with your GS IP) - persists after reboot
 cmd
 route add 10.5.0.0 mask 255.255.255.0 192.168.8.116 -p
-```
-
-**--- Changing the rate at which wfb-ng talks to the gs script ---**
-
-You can add this to  `/etc/wifibroadcast.cfg` on gs
-
-Default is 1Hz (1000ms)
-```
-[common]
-log_interval = 200
 ```
 
 
