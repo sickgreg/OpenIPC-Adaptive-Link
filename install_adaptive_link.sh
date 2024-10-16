@@ -6,6 +6,8 @@ echo_blue()  { printf "\033[1;34m$*\033[m\n"; }
 
 UDP_IP=10.5.0.10
 UDP_PORT=9999
+LOG_INTERVAL=200
+WFBGS_CFG=/etc/wifibroadcast.cfg
 
 
 if [ $(id -u) -ne "0" ]; then
@@ -65,7 +67,16 @@ EOF
 		
 		sed -i 's/udp_ip.*/udp_ip = '$UDP_IP'/' $FILE_CONF
 		sed -i 's/udp_port.*/udp_port = '$UDP_PORT'/' $FILE_CONF
+        
+        
+        isLogInterval=$(grep -o "log_interval" ${WFBGS_CFG})
+		if [ -z $isLogInterval ]; then
+			echo "$(sed '/\[common\]/a log_interval = '${LOG_INTERVAL}'' $WFBGS_CFG)" > $WFBGS_CFG
+		else
+			echo "$(sed '/log_interval.*/c log_interval = '${LOG_INTERVAL}'' $WFBGS_CFG)" > $WFBGS_CFG
+		fi
 
+		systemctl enable wifibroadcast.service
 		systemctl enable $FILE_NAME.service
 		systemctl start $FILE_NAME.service
 		systemctl status $FILE_NAME.service
