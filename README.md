@@ -1,14 +1,13 @@
 # OpenIPC-Adaptive-Link
 **Greg's Adaptive-Link - For OpenIPC Camera and Radxa Zero 3w/e Ground Station**
 
+Warning: Set power levels for your transmitter appropriately in txprofiles.conf
+
 1. Upgrade camera to latest OpenIPC with wfb_tun included (Warning: All files will be overwritten)
 
 `sysupgrade -k -r -n`
 
-
-2. --- For now the installer installs an older version - Please download manually from latest release --->
-
-(Get installer and run)
+2. Get installer and run
 
 ```
 curl -L -o install_adaptive_link.sh https://raw.githubusercontent.com/sickgreg/OpenIPC-Adaptive-Link/refs/heads/main/install_adaptive_link.sh
