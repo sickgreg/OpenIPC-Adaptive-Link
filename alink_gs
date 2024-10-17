@@ -310,6 +310,10 @@ def connect_and_receive_msgpack():
     udp_ip = config['Settings']['udp_ip']
     udp_port = int(config['Settings']['udp_port'])
     retry_interval = int(config['Settings']['retry_interval'])  # Get retry interval from config
+    
+    # Start UDP sending in a separate thread
+    udp_thread = threading.Thread(target=generate_package, daemon=True)  # Change here to call generate_package
+    udp_thread.start()
 
     while True:
         try:
@@ -321,10 +325,6 @@ def connect_and_receive_msgpack():
                 client_socket.connect((host, port))
                 if verbose_mode:
                     print(f"Connected to {host}:{port}")
-
-                # Start UDP sending in a separate thread
-                udp_thread = threading.Thread(target=generate_package, daemon=True)  # Change here to call generate_package
-                udp_thread.start()
 
                 while True:
                     # First, read 4 bytes for the length prefix
