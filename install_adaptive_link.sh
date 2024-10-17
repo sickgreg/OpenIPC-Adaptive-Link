@@ -8,6 +8,10 @@ UDP_IP=10.5.0.10
 UDP_PORT=9999
 LOG_INTERVAL=200
 WFBGS_CFG=/etc/wifibroadcast.cfg
+URL_ALINK_GS=https://raw.githubusercontent.com/sickgreg/OpenIPC-Adaptive-Link/refs/heads/main/alink_gs
+URL_ALINK_DRONE=https://github.com/sickgreg/OpenIPC-Adaptive-Link/raw/refs/heads/main/alink_drone
+URL_TXPROFILE_CONF=https://raw.githubusercontent.com/sickgreg/OpenIPC-Adaptive-Link/refs/heads/main/txprofiles.conf
+URL_ALINK_CONF=https://raw.githubusercontent.com/sickgreg/OpenIPC-Adaptive-Link/refs/heads/main/alink.conf
 
 
 if [ $(id -u) -ne "0" ]; then
@@ -39,7 +43,7 @@ if [ "$1" = "gs" ]; then
 		fi
 
 		
-        wget https://raw.githubusercontent.com/sickgreg/steam-groundstations/refs/heads/master/adaptive-link/adaptive_link_greg3.py -O $FILE
+        wget $URL_ALINK_GS -O $FILE
         chmod +x $FILE
 		
         cat <<EOF | tee $PATH_SERVICE
@@ -103,7 +107,7 @@ EOF
 		systemctl stop $FILE_NAME.service && echo "Wait..." && sleep 3
 		systemctl status $FILE_NAME.service
 		
-		wget https://raw.githubusercontent.com/sickgreg/steam-groundstations/refs/heads/master/adaptive-link/adaptive_link_greg3.py -O $FILE
+		wget $URL_ALINK_GS -O $FILE
 		
 		isLogInterval=$(grep -o "log_interval" ${WFBGS_CFG})
 		if [ -z $isLogInterval ]; then
@@ -142,9 +146,9 @@ elif [ "$1" = "drone" ]; then
 			exit 1
 		fi
 		
-		curl -L -o $FILE https://github.com/sickgreg/OpenIPC-Adaptive-Link/raw/refs/heads/main/ALink42p
-		curl -L -o $TXPROFILE https://raw.githubusercontent.com/sickgreg/OpenIPC-Adaptive-Link/refs/heads/main/txprofiles.conf
-		curl -L -o $ALINK https://github.com/sickgreg/OpenIPC-Adaptive-Link/raw/refs/heads/main/alink.conf
+		curl -L -o $FILE $URL_ALINK_DRONE
+		curl -L -o $TXPROFILE $URL_TXPROFILE_CONF
+		curl -L -o $ALINK $URL_ALINK_CONF
 
 		chmod +x $FILE
 		
@@ -185,9 +189,9 @@ elif [ "$1" = "drone" ]; then
 		echo "killall $FILE_NAME"
 		killall $FILE_NAME && echo "Wait..." && sleep 1
 		
-		curl -L -o $FILE https://github.com/sickgreg/OpenIPC-Adaptive-Link/raw/refs/heads/main/ALink42p
-		curl -L -o $TXPROFILE https://raw.githubusercontent.com/sickgreg/OpenIPC-Adaptive-Link/refs/heads/main/txprofiles.conf
-		curl -L -o $ALINK https://github.com/sickgreg/OpenIPC-Adaptive-Link/raw/refs/heads/main/alink.conf
+		curl -L -o $FILE $URL_ALINK_DRONE
+		curl -L -o $TXPROFILE $URL_TXPROFILE_CONF
+		curl -L -o $ALINK $URL_ALINK_CONF
 		
 		echo_green "The update is complete. Restart the system"
 	fi
