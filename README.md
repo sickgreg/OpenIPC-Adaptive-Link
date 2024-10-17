@@ -6,8 +6,9 @@
 `sysupgrade -k -r -n`
 
 
---- For now the installer installs an older version - Please download manually from latest release --->
-2. Get installer and run
+2. --- For now the installer installs an older version - Please download manually from latest release --->
+
+(Get installer and run)
 
 ```
 curl -L -o install_adaptive_link.sh https://raw.githubusercontent.com/sickgreg/OpenIPC-Adaptive-Link/refs/heads/main/install_adaptive_link.sh
