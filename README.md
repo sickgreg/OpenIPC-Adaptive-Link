@@ -5,6 +5,8 @@
 
 `sysupgrade -k -r -n`
 
+
+--- For now the installer installs an older version - Please download manually from latest release --->
 2. Get installer and run
 
 ```
