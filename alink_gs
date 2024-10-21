@@ -114,26 +114,26 @@ def request_keyframe():
     Send a special message to request a keyframe
     """
     special_message = "special:request_keyframe"
-    num_attempts = 5  # Number of times to send the message
+    num_attempts = 0  # Number of times to send the message
 
     for attempt in range(num_attempts):
         send_udp(special_message)  # Call send_udp to send the special message
         if verbose_mode:
             print(f"Sent special message: {special_message}, attempt {attempt + 1}/{num_attempts}")
-        time.sleep(0.025)  # Wait before the next attempt
+        time.sleep(0.1)  # Wait before the next attempt
     
 def drop_gop():
     """
     Send a special message to drop the gop
     """
     special_message = "special:drop_gop"
-    num_attempts = 5  # Number of times to send the message
+    num_attempts = 0  # Number of times to send the message
 
     for attempt in range(num_attempts):
         send_udp(special_message)  # Call send_udp to send the special message
         if verbose_mode:
             print(f"Sent special message: {special_message}, attempt {attempt + 1}/{num_attempts}")
-        time.sleep(0.025)  # Wait before the next attempt
+        time.sleep(0.1)  # Wait before the next attempt
 
 
 def calculate_link_health(video_rx):
