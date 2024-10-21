@@ -53,8 +53,13 @@ int hold_fallback_mode_s = 2;
 int hold_modes_down_s = 2;
 int min_between_changes_ms = 100;
 int request_keyframe_interval_ms = 50;
-int hysteresis_percent = 10;
+bool allow_request_keyframe = 1;
+int hysteresis_percent = 15;
+int hysteresis_percent_down = 5;
 int baseline_value = 100;
+char global_rssi_string[20] = " -105";
+char global_msposdCommand[512] = "echo 'msposd string not ready yet'";
+char prevFinalCommand[512] = "init";
 
 
 int fallback_ms = 1000;
@@ -115,8 +120,12 @@ void load_config(const char* filename) {
                 fallback_ms = atoi(value);
 			} else if (strcmp(key, "idr_every_change") == 0) {
                 idr_every_change = atoi(value);
+			} else if (strcmp(key, "allow_request_keyframe") == 0) {
+                allow_request_keyframe = atoi(value);	
 			} else if (strcmp(key, "hysteresis_percent") == 0) {
                 hysteresis_percent = atoi(value);				
+			} else if (strcmp(key, "hysteresis_percent_down") == 0) {
+                hysteresis_percent_down = atoi(value);				
 			} else if (strcmp(key, "roi_focus_mode") == 0) {
                 roi_focus_mode = atoi(value);
             } else if (strcmp(key, "powerCommand") == 0) {
@@ -306,10 +315,6 @@ void execute_command_no_quotes(const char* command) {
         puts(command);
     }
 	system(command);
-	if (verbose_mode) {
-		printf("Waiting %ldms\n", pace_exec / 1000);
-    }
-	usleep(pace_exec);
 
 }
 
@@ -440,17 +445,38 @@ void apply_profile(Profile* profile) {
 	
 	
 	// Display stats on msposd
-	
-	sprintf(msposdCommand, msposdCommandTemplate, timeElapsed, profile->setBitrate, profile->setMCS, profile->setGI,
-            profile->setFecK, profile->setFecN, profile->wfbPower, profile->setGop);
+	sprintf(msposdCommand, msposdCommandTemplate, timeElapsed, profile->setBitrate, profile->setMCS, profile->setGI, profile->setFecK, profile->setFecN, profile->wfbPower, profile->setGop, global_rssi_string);
 	execute_command(msposdCommand);
 	
+	// Create global msposd string with %s instead of global_rssi_string so it can be placed there later
+	sprintf(global_msposdCommand, msposdCommandTemplate, timeElapsed, profile->setBitrate, profile->setMCS, profile->setGI, profile->setFecK, profile->setFecN, profile->wfbPower, profile->setGop, "%s");
+
 	
     //sprintf(msposdCommand, "echo \"%ld s %d M:%d %s F:%d/%d P:%d G:%.1f&L30&F28 CPU:&C &Tc\" >/tmp/MSPOSD.msg",
     //        timeElapsed, profile->setBitrate, profile->setMCS, profile->setGI,
     //       profile->setFecK, profile->setFecN, profile->wfbPower, profile->setGop);
     //execute_command_no_quotes(msposdCommand); // Execute the msposd command
 	
+}
+
+void *periodic_update_osd(void *arg) {
+    char finalCommand[512];
+
+    while (true) {
+        		
+		 // Sleep for 1 second
+        sleep(1);
+		
+		// Format the command string
+        sprintf(finalCommand, global_msposdCommand, global_rssi_string);
+        
+		if (strcmp(finalCommand, prevFinalCommand) != 0 ) {
+            
+			// Execute the formatted command
+			execute_command(finalCommand);
+            strcpy(prevFinalCommand, finalCommand);
+		}
+    }
 }
 
 bool value_chooses_profile(int input_value) {
@@ -542,21 +568,25 @@ void start_selection(int rssi_score, int snr_score) {
         combined_value = 2000;
     }
 
-    // Calculate percentage change from baseline value
-    float percent_change = fabs((float)(combined_value - baseline_value) / baseline_value) * 100;
+		// Calculate percentage change from baseline value
+	float percent_change = fabs((float)(combined_value - baseline_value) / baseline_value) * 100;
 
-    // Check if the change exceeds hysteresis threshold
-    if (percent_change >= hysteresis_percent) {
-		printf("Qualified to request profile: %d is > %d%% different (%.2f%%)\n", combined_value, hysteresis_percent, percent_change);
+		// Determine which hysteresis threshold to use (up or down)
+	float hysteresis_threshold = (combined_value >= baseline_value) ? hysteresis_percent : hysteresis_percent_down;
 
-        // Request profile, check if applied
-        if (value_chooses_profile(combined_value)) {
-            printf("Profile %d applied.\n", combined_value);
-            last_value_sent = combined_value;
-            baseline_value = combined_value;
-            last_exec_time = current_time;
-        } 
-    } 
+		// Check if the change exceeds the chosen hysteresis threshold
+	if (percent_change >= hysteresis_threshold) {
+		printf("Qualified to request profile: %d is > %.2f%% different (%.2f%%)\n", combined_value, hysteresis_threshold, percent_change);
+
+    // Request profile, check if applied
+    if (value_chooses_profile(combined_value)) {
+        printf("Profile %d applied.\n", combined_value);
+        last_value_sent = combined_value;
+        baseline_value = combined_value;
+        last_exec_time = current_time;
+    }
+}
+
 
     selection_busy = false;
 }
@@ -590,7 +620,8 @@ void special_command_message(const char *msg) {
     //    printf("Dropping GOP due to lost packets\n");
 	//	system("curl localhost/api/v1/set?video0.gopSize=0.01 &");
 	//	execute_channels_script(998, 1000);
-    } else if (strcmp(cleaned_msg, "request_keyframe") == 0) {
+    
+	} else if (allow_request_keyframe && strcmp(cleaned_msg, "request_keyframe") == 0) {
         struct timespec current_time;
 		clock_gettime(CLOCK_MONOTONIC, &current_time);  // Use CLOCK_MONOTONIC
 		long time_diff_ms = (current_time.tv_sec - last_keyframe_request_time.tv_sec) * 1000 +
@@ -612,7 +643,7 @@ void special_command_message(const char *msg) {
         }
     } else {
         // Handle unknown commands if needed
-        printf("Unknown command: %s\n", cleaned_msg);
+        printf("Unknown or disabled command: %s\n", cleaned_msg);
     }
 }
 
@@ -702,6 +733,8 @@ void process_message(const char *msg) {
         token = strtok(NULL, ":");
         index++;
     }
+	
+	sprintf(global_rssi_string, " %d", rssi1);
 
     // Print parsed values (for demonstration purposes)
    // printf("Parsed values: %d, %d, %d, %d, %d, %d, %d, %d, %d\n",
@@ -814,6 +847,10 @@ int main(int argc, char *argv[]) {
     // Prepare counting thread
 	pthread_t count_thread;
     pthread_create(&count_thread, NULL, count_messages, NULL);
+	
+	// Prepare periodic OSD update thread
+	pthread_t osd_thread;
+	pthread_create(&osd_thread, NULL, periodic_update_osd, NULL);
 
 
  while (1) {
