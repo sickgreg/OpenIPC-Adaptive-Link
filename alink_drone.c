@@ -61,11 +61,9 @@ char global_rssi_string[20] = " -105";
 char global_msposdCommand[512] = "echo 'msposd string not ready yet'";
 char prevFinalCommand[512] = "init";
 
-
 int fallback_ms = 1000;
 bool idr_every_change = false;
 bool roi_focus_mode = false;
-
 
 char powerCommandTemplate[100], mcsCommandTemplate[100], bitrateCommandTemplate[150], gopCommandTemplate[100], fecCommandTemplate[100], roiCommandTemplate[150], idrCommandTemplate[100], msposdCommandTemplate[512];
 bool verbose_mode = false;
