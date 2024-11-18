@@ -7,18 +7,20 @@ Warning: Set power levels for your transmitter appropriately in txprofiles.conf
 
 `sysupgrade -k -r -n`
 
-2. Get installer and run
+2. Check out Releases for the latest --------->
+
+OR get installer and run this on drone (note this may not get the latest version on drone)
 
 ```
 curl -L -o install_adaptive_link.sh https://raw.githubusercontent.com/sickgreg/OpenIPC-Adaptive-Link/refs/heads/main/install_adaptive_link.sh
 chmod +x install_adaptive_link.sh
 ./install_adaptive_link.sh drone install
 ```
-Settings (including power levels) can be set in `/etc/txprofiles.conf` and `/etc/alink.conf`
+Air-side settings (including power levels) can be set in `/etc/txprofiles.conf` and `/etc/alink.conf`
 
-3. Install on ground station
+3. and this on ground station (note: on gs this will copy/rename the files to /etc/adaptive_link.conf and /usr/bin/adaptive_link)
 
-Same as above with gs
+
 ```
 curl -L -o install_adaptive_link.sh https://raw.githubusercontent.com/sickgreg/OpenIPC-Adaptive-Link/refs/heads/main/install_adaptive_link.sh
 chmod +x install_adaptive_link.sh
@@ -42,8 +44,59 @@ Default is only 1Hz (1000ms).  200ms gives the script 5 rssi/snr/etc/etc updates
 [common]
 log_interval = 200
 ```
+**--- Config files on drone/camera ---**
+**--- txprofiles.conf ---**
+
+Lives on camera: `/etc/txprofiles.conf`
+Stores video / mcs settings for all the different modes used in adaptive link
+
+NOTE: Be careful with PWR settings.  These examples are for pushing the BL-8812EU2 (square-blue) fairly hard.  They may blow up other adapters. power settings are the 56 to 61 values towards the end of each line in this example
+
+Example contents of `/etc/txprofiles.conf` for use with BL-8812EU2 (sqauare blue)
 
 
+```
+999 - 999 long 0 12 15 3332 5.0 61 0,0,0,0
+1000 - 1150 long 0 12 15 3333 5.0 60 0,0,0,0
+1151 - 1300 long 1 12 15 6667 5.0 59 12,6,6,12
+1301 - 1700 long 2 12 15 10000 5.0 58 12,6,6,12
+1701 - 1950 long 3 12 15 12500 5.0 56 8,4,4,8
+1951 - 2001 short 3 12 15 14000 5.0 56 4,0,0,4
+```
+
+The values are: `rangestart - rangeend guard_interval FECN FECK Bitrate GOP PWR ROI-QP-definition`
+
+
+**--- alink.conf ---**
+
+Lives on camera: `/etc/alink.conf`
+
+```
+
+rssi_weight=0.3
+snr_weight=0.7
+fallback_ms=1000
+hold_fallback_mode_s=3
+min_between_changes_ms=150
+hold_modes_down_s=4
+idr_every_change=false
+roi_focus_mode=false
+request_keyframe_interval_ms=100
+hysteresis_percent=15
+
+
+# Command templates - Don't change these unless you know what you are doing
+powerCommand="iw dev wlan0 set txpower fixed %d"
+mcsCommand="wfb_tx_cmd 8000 set_radio -B 20 -G %s -S 1 -L 1 -M %d"
+bitrateCommand="curl -s 'http://localhost/api/v1/set?video0.bitrate=%d'"
+gopCommand="curl -s 'http://localhost/api/v1/set?video0.gopSize=%f'"
+fecCommand="wfb_tx_cmd 8000 set_fec -k %d -n %d"
+roiCommand="curl -s 'http://localhost/api/v1/set?fpv.roiQp=%s'"
+idrCommand="echo 'IDR 0' | nc localhost 4000"
+#idrCommand="curl localhost/request/idr"
+msposdCommand="echo '%ld s %d M:%d %s F:%d/%d P:%d G:%.1f&L30&F28 CPU:&C &Tc' >/tmp/MSPOSD.msg"
+#timeElapsed, profile->setBitrate, profile->setMCS, profile->setGI, profile->setFecK, profile->setFecN, profile->wfbPower, profile->setGop
+```
 
 
 **--- How to WinSCP to your drone via gs over tunnel ---**
@@ -67,7 +120,7 @@ route add 10.5.0.0 mask 255.255.255.0 192.168.8.116 -p
 ```
 
 
-**More details**
+**More details - Old readme. Still may be useful information**
 
 **--- ALink42p ---**
 
@@ -88,7 +141,7 @@ I'm running `/usr/bin/ALink42p &` from `/etc/rc.local` startup script. You also 
 
 eg
 
-I put
+how to MANUALLY START TUNNEL (not necessary now:  enable tunnel in /etc/datalink.conf)
 ```
 # Tunnel pair
 wfb_rx -c 127.0.0.1 -u 5800 -K /etc/drone.key -p 160 -i 7669206 wlan0 > /dev/null &
@@ -97,10 +150,10 @@ wfb_tun -T 0 &
 # Although this may work out of the box already if you sysupgrade (?)
 # Then
 sleep 2
-/usr/bin/ALink42m
+/usr/bin/ALink42
 ```
 
-Old Way - for reference
+Old Way without tunnel, just a simple rx on drone, no tunnel overhead, original way, superceded
 
 `wfb_rx -c 127.0.0.1 -u 5000 -K /etc/drone.key -p 1 -i 7669207 wlan0 &`
 
@@ -170,55 +223,4 @@ Run
   If in `/etc/default/wifibroadcast` file we have `WFB_NICS="rtl1 rtl2 rtl3"`, the program will send to port 9999,10000,10001, so set --first_port_out to the same port you start wfb_tx on (eg 9999)
   
 
-**--- txprofiles.conf ---**
 
-Lives on camera: `/etc/txprofiles.conf`
-Stores video / mcs settings for all the different modes used in adaptive link
-
-NOTE: Be careful with PWR settings.  These examples are for pushing the BL-8812EU2 (square-blue) fairly hard.
-
-Example contents of `/etc/txprofiles.conf`
-
-
-```
-999 - 999 long 0 12 15 3332 5.0 61 0,0,0,0
-1000 - 1150 long 0 12 15 3333 5.0 60 0,0,0,0
-1151 - 1300 long 1 12 15 6667 5.0 59 0,0,0,0
-1301 - 1700 long 2 12 15 10000 5.0 58 0,0,0,0
-1701 - 1950 long 3 12 15 12500 5.0 56 0,0,0,0
-1951 - 2001 short 3 12 15 14000 5.0 56 0,0,0,0
-```
-
-The values are: `rangestart - rangeend guard_interval FECN FECK Bitrate GOP PWR ROI-QP-definition`
-
-
-**--- alink.conf ---**
-
-Lives on camera: `/etc/alink.conf`
-
-```
-
-rssi_weight=0.3
-snr_weight=0.7
-fallback_ms=1000
-hold_fallback_mode_s=3
-min_between_changes_ms=150
-hold_modes_down_s=4
-idr_every_change=false
-roi_focus_mode=false
-request_keyframe_interval_ms=100
-hysteresis_percent=15
-
-
-# Command templates - Don't change these unless you know what you are doing
-powerCommand="iw dev wlan0 set txpower fixed %d"
-mcsCommand="wfb_tx_cmd 8000 set_radio -B 20 -G %s -S 1 -L 1 -M %d"
-bitrateCommand="curl -s 'http://localhost/api/v1/set?video0.bitrate=%d'"
-gopCommand="curl -s 'http://localhost/api/v1/set?video0.gopSize=%f'"
-fecCommand="wfb_tx_cmd 8000 set_fec -k %d -n %d"
-roiCommand="curl -s 'http://localhost/api/v1/set?fpv.roiQp=%s'"
-idrCommand="echo 'IDR 0' | nc localhost 4000"
-#idrCommand="curl localhost/request/idr"
-msposdCommand="echo '%ld s %d M:%d %s F:%d/%d P:%d G:%.1f&L30&F28 CPU:&C &Tc' >/tmp/MSPOSD.msg"
-#timeElapsed, profile->setBitrate, profile->setMCS, profile->setGI, profile->setFecK, profile->setFecN, profile->wfbPower, profile->setGop
-```
