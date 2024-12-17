@@ -3,6 +3,8 @@
 
 Warning: Set power levels for your transmitter appropriately in txprofiles.conf
 
+About the files named above. There are some older versions eg 42q etc still there for reference. Current code is in alink_drone.c 
+
 1. Upgrade camera to latest OpenIPC with wfb_tun included (Warning: All files will be overwritten)
 
 `sysupgrade -k -r -n`
