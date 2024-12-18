@@ -56,6 +56,33 @@ Whenever an informative_heartbeat is heard, information about the link imbedded 
 
 I have found 20 to 40 for AU cards to be appropriate
 
+
+Here's how i have been setting the cards power. Works for 8812AU cards
+
+```
+#/bin/bash
+
+# usage ./setpower.sh <pwrlvl>
+echo Stopping wifibroadcast
+sudo systemctl stop wifibroadcast
+echo Unloading 88XXau_wfb  module
+sudo modprobe -r 88XXau_wfb &&
+echo Loading 88XXau_wfb module with power level $1
+sudo modprobe 88XXau_wfb rtw_tx_pwr_idx_override=$1
+echo Restarting wifibroadcast
+sudo systemctl start wifibroadcast
+echo Finished
+```
+
+Get this gs script by running this:
+
+```
+curl -L -o setpower.sh https://raw.githubusercontent.com/sickgreg/OpenIPC-Adaptive-Link/refs/heads/main/more/setpower.sh
+chmod +x setpower.sh
+```
+
+Then run, eg, `sudo ./setpower.sh 30`
+
 **--- Changing the rate at which wfb-ng talks to the gs script ---**
 
 Note: Installer sets this to latest release's default automatically.  If it finds /home/radxa/gs/wfb.sh then it will update it there (taking effect after restart) otherwise it will directly update `/etc/wifibroadcast.cfg`
