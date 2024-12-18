@@ -1,51 +1,63 @@
 # OpenIPC-Adaptive-Link
 **Greg's Adaptive-Link - For OpenIPC Camera and Radxa Zero 3w/e Ground Station**
 
-Warning: Set power levels for your transmitter appropriately in txprofiles.conf
+Warning: Select your drone adapter type EU or AU in /etc/alink.conf and leave alone or mindfully set power levels appropriately in /etc/txprofiles.conf.  Default is EU, safe 40 to 45.  AU won't auto-set power until changing /etc/alink.conf (todo have auto card detection)
 
-About the files named above. There are some older versions eg 42q etc still there for reference. Current code is in alink_drone.c (and it's conf files alink.conf and txprofiles.conf) and alink_gs. 
+About the files above. There are some older versions eg 42q etc still there for reference. Current code for latest release is in alink_drone.c (and it's conf files alink.conf and txprofiles.conf) and alink_gs. 
 
-1. Upgrade camera to latest OpenIPC with wfb_tun included (Warning: All files will be overwritten)
+
+**Installation**
+
+
+1. A recent OpenIPC firmware for Sigmastar including wfb tunnel is required. It is recommended to upgrade camera to latest OpenIPC (Warning: All files will be overwritten)
 
 `sysupgrade -k -r -n`
 
-2. Check out Releases for the latest --------->
+2. For manual file download; check out releases --------->
 
-OR get installer and run this on drone (note this may not get the latest version on drone)
-
-```
-curl -L -o install_adaptive_link.sh https://raw.githubusercontent.com/sickgreg/OpenIPC-Adaptive-Link/refs/heads/main/install_adaptive_link.sh
-chmod +x install_adaptive_link.sh
-./install_adaptive_link.sh drone install
-```
-Air-side settings (including power levels) can be set in `/etc/txprofiles.conf` and `/etc/alink.conf`
-
-3. and this on ground station (note: on gs this will copy/rename the files to /etc/adaptive_link.conf and /usr/bin/adaptive_link)
-
+OR Auto-install on drone --> run this (fetches and installs latest release (or pre-release if still applicable))
 
 ```
-curl -L -o install_adaptive_link.sh https://raw.githubusercontent.com/sickgreg/OpenIPC-Adaptive-Link/refs/heads/main/install_adaptive_link.sh
-chmod +x install_adaptive_link.sh
-sudo ./install_adaptive_link.sh gs install
+cd /etc
+curl -L -o alink_install.sh https://raw.githubusercontent.com/sickgreg/OpenIPC-Adaptive-Link/refs/heads/main/alink_install.sh
+chmod +x alink_install.sh
+./alink_install.sh drone install
+```
+Config files are `/etc/txprofiles.conf` and `/etc/alink.conf`
+
+3. Auto-install on ground station
+
+
+```
+curl -L -o alink_install.sh https://raw.githubusercontent.com/sickgreg/OpenIPC-Adaptive-Link/refs/heads/main/alink_install.sh
+sudo chmod +x alink_install.sh
+sudo ./alink_install.sh gs install
 ```
 
-Service will be added to systemd.  stop | start | disable | enable | status with `sudo systemctl stop adaptive_link`
+Service will be added to systemd. Use stop | start | disable | enable | status with `sudo systemctl stop alink_gs`
 
-config file is `/etc/adaptive_link.conf`
+`alink_gs.conf` config file will be created in `/config/ if it exists or `/home/radxa` if it exists or finally `/etc` if neither of those exist
 
-Make sure to set udp port to 9999 and udp IP to 10.5.0.10 (drone's IP) in adaptive_link.conf
+4.  Set power level on your ground station wifi card(s)
 
+alink_drone listens for an informative_heartbeat from the ground station to decide on link speed and range and therefor video quality.  If it doesn't hear anything for a preset period of time, it will fall back to profile 999, which is set to MCS 0 for the furthest possible range.  If you're not getting out of this mode, the drone isn't hearing the ground station.
 
+Whenever an informative_heartbeat is heard, information about the link imbedded in the hearbeat is used by alink_drone to set link speed appropriatly.  We need to set ground station power levels high enough to be heard by the drone.
+
+I have found 20 to 40 for AU cards to be appropriate
 
 **--- Changing the rate at which wfb-ng talks to the gs script ---**
 
-You can add this to  `/etc/wifibroadcast.cfg` on gs
+Note: Installer sets this to latest release's default automatically.  If it finds /home/radxa/gs/wfb.sh then it will update it there (taking effect after restart) otherwise it will directly update `/etc/wifibroadcast.cfg`
 
 Default is only 1Hz (1000ms).  200ms gives the script 5 rssi/snr/etc/etc updates per second
 ```
 [common]
 log_interval = 200
 ```
+
+**Some of the information below MAY BE OUTDATED -- it is there for reference**
+
 **--- Config files on drone/camera ---**
 **--- txprofiles.conf ---**
 
