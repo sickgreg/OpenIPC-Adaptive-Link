@@ -15,7 +15,7 @@ About the files above. There are some older versions eg 42q etc still there for 
 
 2. For manual file download; check out releases --------->
 
-OR Auto-install on drone --> run this (fetches and installs latest release (or pre-release if still applicable))
+OR Auto-install on drone --> run this (fetches and installs latest pre-release, for now)
 
 ```
 cd /etc
