@@ -3,6 +3,8 @@ import socket
 import msgpack
 import struct
 import threading
+import string
+import random
 import time
 import argparse
 import os
@@ -24,6 +26,10 @@ udp_ip = None  # To store the UDP IP globally
 udp_port = None  # To store the UDP port globally
 previous_link_health_score_rssi = None
 previous_link_health_score_snr = None
+# Counting fec_rec
+accumulator_period = 1.0
+recovered_packets_accumulator = 0
+last_accumulator_reset = time.time()
 
 
 
@@ -35,8 +41,8 @@ DEFAULT_CONFIG = {
         'use_best_rssi': 'True',  # Option to pick best available RSSI for link health score
         'min_rssi': '-85',  # Min RSSI range for link health
         'max_rssi': '-50',  # Max RSSI range for link health
-        'min_snr': '12',  # Min SNR range for link health
-        'max_snr': '28',  # Max SNR range for link health
+        'min_snr': '10',  # Min SNR range for link health
+        'max_snr': '30',  # Max SNR range for link health
         'host': '127.0.0.1',  # Host address to connect to
         'port': '8003',  # Port to connect to
         'udp_ip': '10.5.0.10',  # UDP IP to send link health data
@@ -58,6 +64,11 @@ DEFAULT_CONFIG = {
         'retry_interval': 'Time in seconds to wait before retrying TCP connection on failure'
     }
 }
+
+def update_recovered_packets_accumulator(new_recovered_packets):
+    global recovered_packets_accumulator
+    recovered_packets_accumulator += new_recovered_packets
+
 
 def load_config(config_file='config.ini'):
     global config
@@ -109,18 +120,29 @@ def update_version_history(config_file):
     with open(config_file, 'w') as f:
         config.write(f)
 
+def generate_random_code(length=4):
+    """
+    Generate a random string of letters of specified length
+    """
+    return ''.join(random.choices(string.ascii_lowercase, k=length))
+
 def request_keyframe():
     """
-    Send a special message to request a keyframe
+    Send a special message to request a keyframe with a unique code each time
     """
-    special_message = "special:request_keyframe"
-    num_attempts = 0  # Number of times to send the message
+    num_attempts = 5  # Number of times to send the message
+
+    # Generate a random code for this request
+    unique_code = generate_random_code()
+
+    # Create the special message with the unique code
+    special_message = f"special:request_keyframe:{unique_code}"
 
     for attempt in range(num_attempts):
         send_udp(special_message)  # Call send_udp to send the special message
         if verbose_mode:
             print(f"Sent special message: {special_message}, attempt {attempt + 1}/{num_attempts}")
-        time.sleep(0.1)  # Wait before the next attempt
+        time.sleep(0.025)  # Wait before the next attempt
     
 def drop_gop():
     """
@@ -156,13 +178,15 @@ def calculate_link_health(video_rx):
         # Get FEC recovery stats from the 'packets' field
         fec_rec = packets.get('fec_rec', [0, 0])
         recovered_packets = fec_rec[0]  # Update the global recovered_packets
-        
+        update_recovered_packets_accumulator(recovered_packets)
+       
         # Get lost packet stats from the 'packets' field
         lost = packets.get('lost', [0, 0])
         lost_packets = lost[0]  # Update the global lost_packets
         
         # Check lost_packets and send special message if condition is met
         if 0 < lost_packets < 10:
+        #if recovered_packets > 3:
             request_keyframe()  # Send request_keyframe message
             #drop_gop() # Send drop_gop message
            
@@ -286,13 +310,28 @@ def generate_package():
     """
     Generate, at interval, string with all the variables
     """
+    global recovered_packets_accumulator, last_accumulator_reset  # Declare as global to modify outer variables
     message_interval = int(config['Settings']['message_interval']) / 1000  # Convert to seconds
     
     while True:
         timestamp = int(time.time())  # Get epoch time in seconds since 1970
+        current_time = time.time()
+
+        if current_time - last_accumulator_reset >= accumulator_period:
+            # Use and reset the accumulated value
+            recovered_packet_count = recovered_packets_accumulator
+            recovered_packets_accumulator = 0  # Reset accumulator
+            last_accumulator_reset = current_time
+        else:
+            # Continue using the current accumulated value
+            recovered_packet_count = recovered_packets_accumulator
+        
         # Include best antennas in the message
-        message = f"{timestamp}:{link_health_score_rssi}:{link_health_score_snr}:{recovered_packets}:{lost_packets}:{best_antennas_rssi[0]}:{best_antennas_rssi[1]}:{best_antennas_rssi[2]}:{best_antennas_rssi[3]}"
-                    
+        #message = f"{timestamp}:{link_health_score_rssi}:{link_health_score_snr}:{recovered_packets}:{lost_packets}:{best_antennas_rssi[0]}:{best_antennas_snr[0]}:{best_antennas_snr[1]}:{best_antennas_snr[2]}"
+        
+        message = f"{timestamp}:{link_health_score_rssi}:{link_health_score_snr}:{recovered_packets}:{recovered_packet_count}:{best_antennas_rssi[0]}:{best_antennas_snr[0]}:{best_antennas_snr[1]}:{best_antennas_snr[2]}"
+        
+        
         # Pass the message to send_udp function
         send_udp(message)
                 

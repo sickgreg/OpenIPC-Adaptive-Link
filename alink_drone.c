@@ -17,7 +17,7 @@
 #define DEFAULT_IP "10.5.0.10"
 #define CONFIG_FILE "/etc/alink.conf"
 #define PROFILE_FILE "/etc/txprofiles.conf"
-#define MAX_PROFILES 6
+#define MAX_PROFILES 15
 #define DEFAULT_PACE_EXEC_MS 50
 
 typedef struct {
@@ -57,25 +57,56 @@ bool allow_request_keyframe = 1;
 int hysteresis_percent = 15;
 int hysteresis_percent_down = 5;
 int baseline_value = 100;
-char global_rssi_string[20] = " -105";
-char global_msposdCommand[512] = "echo 'msposd string not ready yet'";
+float smoothing_factor = 0.5;
+float smoothing_factor_down = 0.8;
+float smoothed_combined_value = 1500;
+char global_general_osd_string[64] = "no data yet";
+char global_msposdCommand[384] = "echo 'msposd string not ready yet'";
+char global_dropped_tx_string[20] = "init";
 char prevFinalCommand[512] = "init";
+int applied_penalty = 0;
+struct timespec penalty_timestamp;
+int fec_rec_alarm = 20;
+int fec_rec_penalty = 150;
+int apply_penalty_for_s = 3;
 
 int fallback_ms = 1000;
 bool idr_every_change = false;
 bool roi_focus_mode = false;
 
-char powerCommandTemplate[100], mcsCommandTemplate[100], bitrateCommandTemplate[150], gopCommandTemplate[100], fecCommandTemplate[100], roiCommandTemplate[150], idrCommandTemplate[100], msposdCommandTemplate[512];
+char powerCommandTemplate[100], mcsCommandTemplate[100], bitrateCommandTemplate[150], gopCommandTemplate[100], fecCommandTemplate[100], roiCommandTemplate[150], idrCommandTemplate[100], msposdCommandTemplate[384];
 bool verbose_mode = false;
 bool selection_busy = false;
 int message_count = 0;      // Global variable for message count
 bool paused = false;        // Global variable for pause state
 bool time_synced = false;   // Global flag to indicate if time has been synced
-int last_value_sent = 100; 
-struct timespec last_exec_time; 
+int last_value_sent = 100;
+struct timespec last_exec_time;
 struct timespec last_keyframe_request_time;	// Last keyframe request command
 pthread_mutex_t count_mutex = PTHREAD_MUTEX_INITIALIZER;  // Mutex for message count
 pthread_mutex_t pause_mutex = PTHREAD_MUTEX_INITIALIZER;  // Mutex for pause state
+
+#define MAX_CODES 5       // Maximum number of unique keyframe requests to track
+#define CODE_LENGTH 8     // Max length of each unique code
+#define EXPIRY_TIME_MS 1000 // Code expiry time in milliseconds
+
+int total_keyframe_requests = 0;
+long global_total_tx_dropped = 0;
+
+
+// Struct to store each keyframe request code and its timestamp
+typedef struct {
+    char code[CODE_LENGTH];
+    struct timespec timestamp;
+} KeyframeRequest;
+
+// Static array of keyframe requests
+static KeyframeRequest keyframe_request_codes[MAX_CODES];
+static int num_keyframe_requests = 0;  // Track the number of stored keyframe requests
+
+
+
+
 
 long get_monotonic_time() {
     struct timespec ts;
@@ -119,13 +150,23 @@ void load_config(const char* filename) {
 			} else if (strcmp(key, "idr_every_change") == 0) {
                 idr_every_change = atoi(value);
 			} else if (strcmp(key, "allow_request_keyframe") == 0) {
-                allow_request_keyframe = atoi(value);	
+                allow_request_keyframe = atoi(value);
 			} else if (strcmp(key, "hysteresis_percent") == 0) {
-                hysteresis_percent = atoi(value);				
+                hysteresis_percent = atoi(value);
 			} else if (strcmp(key, "hysteresis_percent_down") == 0) {
-                hysteresis_percent_down = atoi(value);				
+                hysteresis_percent_down = atoi(value);
+			} else if (strcmp(key, "exp_smoothing_factor") == 0) {
+                smoothing_factor = atof(value);
+			} else if (strcmp(key, "exp_smoothing_factor_down") == 0) {
+                smoothing_factor_down = atof(value);
 			} else if (strcmp(key, "roi_focus_mode") == 0) {
                 roi_focus_mode = atoi(value);
+			} else if (strcmp(key, "fec_rec_alarm") == 0) {
+                fec_rec_alarm = atoi(value);
+            } else if (strcmp(key, "fec_rec_penalty") == 0) {
+                fec_rec_penalty = atoi(value);
+            } else if (strcmp(key, "apply_penalty_for_s") == 0) {
+                apply_penalty_for_s = atoi(value);
             } else if (strcmp(key, "powerCommand") == 0) {
                 strncpy(powerCommandTemplate, value, sizeof(powerCommandTemplate));
             } else if (strcmp(key, "mcsCommand") == 0) {
@@ -140,10 +181,10 @@ void load_config(const char* filename) {
                 strncpy(roiCommandTemplate, value, sizeof(roiCommandTemplate));
             } else if (strcmp(key, "idrCommand") == 0) {
                 strncpy(idrCommandTemplate, value, sizeof(idrCommandTemplate));
-			
+
 			} else if (strcmp(key, "msposdCommand") == 0) {
-                strncpy(msposdCommandTemplate, value, sizeof(msposdCommandTemplate));	
-				
+                strncpy(msposdCommandTemplate, value, sizeof(msposdCommandTemplate));
+
             } else {
                 fprintf(stderr, "Warning: Unrecognized configuration key: %s\n", key);
 				exit(EXIT_FAILURE);  // Exit the program with an error status
@@ -180,9 +221,11 @@ void load_profiles(const char* filename) {
     fclose(file);
 }
 
+
+
 // Function to setup roi in majestic.yaml based on resolution
 int setup_roi() {
-	
+
     // Variables for resolution
     int x_res, y_res;
     char resolution[32];
@@ -333,7 +376,7 @@ void execute_command(const char* command) {
 
 
 void apply_profile(Profile* profile) {
-    
+
     char powerCommand[100];
     char mcsCommand[100];
     char bitrateCommand[150];
@@ -364,7 +407,7 @@ void apply_profile(Profile* profile) {
 
     // Logic to determine execution order and see if values are different
     if (currentProfile > previousProfile) {
-        
+
         if (currentWfbPower != prevWfbPower) {
             sprintf(powerCommand, powerCommandTemplate, currentWfbPower * 50);
             execute_command(powerCommand);
@@ -379,7 +422,7 @@ void apply_profile(Profile* profile) {
             sprintf(mcsCommand, mcsCommandTemplate, currentSetGI, currentSetMCS);
             execute_command(mcsCommand);
             strcpy(prevSetGI, currentSetGI);
-            prevSetMCS = currentSetMCS; 
+            prevSetMCS = currentSetMCS;
         }
         if (currentSetFecK != prevSetFecK || currentSetFecN != prevSetFecN) {
             sprintf(fecCommand, fecCommandTemplate, currentSetFecK, currentSetFecN);
@@ -390,7 +433,7 @@ void apply_profile(Profile* profile) {
         if (currentSetBitrate != prevSetBitrate) {
             sprintf(bitrateCommand, bitrateCommandTemplate, currentSetBitrate);
             execute_command(bitrateCommand);
-            prevSetBitrate = currentSetBitrate; 
+            prevSetBitrate = currentSetBitrate;
         }
         if (roi_focus_mode && strcmp(currentROIqp, prevROIqp) != 0) {
             sprintf(roiCommand, roiCommandTemplate, currentROIqp);
@@ -400,9 +443,9 @@ void apply_profile(Profile* profile) {
 		if (idr_every_change) {
 			execute_command(idrCommand);
 		}
-		
+
     } else {
-        
+
         if (currentSetBitrate != prevSetBitrate) {
             sprintf(bitrateCommand, bitrateCommandTemplate, currentSetBitrate);
             execute_command(bitrateCommand);
@@ -428,54 +471,63 @@ void apply_profile(Profile* profile) {
         if (currentWfbPower != prevWfbPower) {
             sprintf(powerCommand, powerCommandTemplate, currentWfbPower * 50);
             execute_command(powerCommand);
-            prevWfbPower = currentWfbPower; 
+            prevWfbPower = currentWfbPower;
         }
         if (roi_focus_mode && strcmp(currentROIqp, prevROIqp) != 0) {
             sprintf(roiCommand, roiCommandTemplate, currentROIqp);
             execute_command(roiCommand);
             strcpy(prevROIqp, currentROIqp);
         }
-		
+
 		if (idr_every_change) {
 			execute_command(idrCommand);
 		}
     }
-	
-	
-	// Display stats on msposd
-	sprintf(msposdCommand, msposdCommandTemplate, timeElapsed, profile->setBitrate, profile->setMCS, profile->setGI, profile->setFecK, profile->setFecN, profile->wfbPower, profile->setGop, global_rssi_string);
-	execute_command(msposdCommand);
-	
-	// Create global msposd string with %s instead of global_rssi_string so it can be placed there later
-	sprintf(global_msposdCommand, msposdCommandTemplate, timeElapsed, profile->setBitrate, profile->setMCS, profile->setGI, profile->setFecK, profile->setFecN, profile->wfbPower, profile->setGop, "%s");
 
-	
+
+	// Instantly display stats on msposd
+	sprintf(msposdCommand, msposdCommandTemplate, timeElapsed, profile->setBitrate, profile->setMCS, profile->setGI, profile->setFecK, profile->setFecN, profile->wfbPower, profile->setGop, global_general_osd_string, global_dropped_tx_string);
+	//execute_command(msposdCommand);
+
+	// Create global msposd string with %s instead of global_general_osd_string so it can be placed there later and %s for tx_dropped
+	snprintf(global_msposdCommand, sizeof(global_msposdCommand), msposdCommandTemplate, timeElapsed, profile->setBitrate, profile->setMCS, profile->setGI, profile->setFecK, profile->setFecN, profile->wfbPower, profile->setGop, "%s, %s");
+
+
     //sprintf(msposdCommand, "echo \"%ld s %d M:%d %s F:%d/%d P:%d G:%.1f&L30&F28 CPU:&C &Tc\" >/tmp/MSPOSD.msg",
     //        timeElapsed, profile->setBitrate, profile->setMCS, profile->setGI,
     //       profile->setFecK, profile->setFecN, profile->wfbPower, profile->setGop);
     //execute_command_no_quotes(msposdCommand); // Execute the msposd command
-	
+
 }
+
+
 
 void *periodic_update_osd(void *arg) {
     char finalCommand[512];
 
     while (true) {
-        		
-		 // Sleep for 1 second
+        // Sleep for 1 second
         sleep(1);
-		
-		// Format the command string
-        sprintf(finalCommand, global_msposdCommand, global_rssi_string);
-        
-		if (strcmp(finalCommand, prevFinalCommand) != 0 ) {
-            
-			// Execute the formatted command
-			execute_command(finalCommand);
+
+        //create string out of global dropped tx packets
+		char d_tx_str[20]; sprintf(d_tx_str, "%ld", global_total_tx_dropped);
+        strcpy(global_dropped_tx_string, d_tx_str);
+
+        // Format the command string
+        sprintf(finalCommand, global_msposdCommand, global_general_osd_string, d_tx_str);
+
+        // Compare with the previous command to avoid redundant execution
+        if (strcmp(finalCommand, prevFinalCommand) != 0) {
+            // Execute the formatted command
+            execute_command(finalCommand);
+            // Store the current command for future comparison
             strcpy(prevFinalCommand, finalCommand);
-		}
+        }
     }
+
+    return NULL;
 }
+
 
 bool value_chooses_profile(int input_value) {
     // Get the appropriate profile based on input
@@ -486,7 +538,7 @@ bool value_chooses_profile(int input_value) {
     }
 
     // Find the index of the selected profile
-    
+
     for (int i = 0; i < MAX_PROFILES; i++) {
         if (selectedProfile == &profiles[i]) {
             currentProfile = i;
@@ -505,145 +557,316 @@ bool value_chooses_profile(int input_value) {
     long timeElapsed = currentTime - prevTimeStamp;
 
     if (previousProfile == 0 && timeElapsed <= hold_fallback_mode_s) {
-        return false;
+        if (verbose_mode) {
+			puts("Holding fallback...");
+		}
+		return false;
     }
-    if ((currentProfile - previousProfile == 1) && timeElapsed <= hold_modes_down_s) {
-        return false;
+    if (previousProfile < currentProfile && timeElapsed <= hold_modes_down_s) {
+        if (verbose_mode) {
+			puts("Holding mode down...");
+		}
+		return false;
     }
 
     // Apply the selected profile
     apply_profile(selectedProfile);
-	// Update previousProfile 
+	// Update previousProfile
     previousProfile = currentProfile;
 	prevTimeStamp = currentTime;
 	return true;
-	
+
 }
 
-void start_selection(int rssi_score, int snr_score) {
-    if (selection_busy) {
-        return;
-    }
-    selection_busy = true;
+void start_selection(int rssi_score, int snr_score, int recovered) {
 
     struct timespec current_time;
     clock_gettime(CLOCK_MONOTONIC, &current_time);
 
     // Shortcut for fallback profile 999
-    if (rssi_score == 999) {    
+    if (rssi_score == 999) {
         if (value_chooses_profile(999)) {
             printf("Applied.\n");
             last_value_sent = 999;
-            baseline_value = 999;
+            smoothed_combined_value = 999;
             last_exec_time = current_time;
         } else {
             printf("Not applied.\n");
+		}
+		return;
+    }
+
+	// Check for any penalties
+	if (recovered >= fec_rec_alarm && (fec_rec_penalty * recovered) > applied_penalty) {
+		applied_penalty = fec_rec_penalty * recovered;
+		penalty_timestamp = current_time;
+		if (verbose_mode) {
+			puts("fec_rec penalty condition met...");
+		}
+	}
+	// Check penalty expiration
+    if (applied_penalty > 0 && (current_time.tv_sec - penalty_timestamp.tv_sec) > apply_penalty_for_s) {
+        applied_penalty = 0;
+        if (verbose_mode) {
+            puts("fec_rec penalty time is up. Penalty withdrawn");
         }
-        selection_busy = false;
-        return;
     }
 
-    // Check if enough time has passed before doing further calculations
-    long time_diff_ms = (current_time.tv_sec - last_exec_time.tv_sec) * 1000 +
-                        (current_time.tv_nsec - last_exec_time.tv_nsec) / 1000000;
-
-    if (time_diff_ms < min_between_changes_ms) {
-        printf("Skipping profile load: time_diff_ms=%ldms - too soon (min %dms required)\n", 
-               time_diff_ms, min_between_changes_ms);
-        selection_busy = false;
-        return;
+	if (selection_busy) {
+        if (verbose_mode) {
+			puts("Selection process busy...");
+		}
+		return;
     }
+    selection_busy = true;
 
     // Combine rssi and snr by weight
-    float w_rssi = rssi_weight;
-    float w_snr = snr_weight;
-    int combined_value = floor(rssi_score * w_rssi + snr_score * w_snr);
+	float combined_value_float = rssi_score * rssi_weight + snr_score * snr_weight;
 
-    if (combined_value < 1000) {
-        combined_value = 1000;
+	// Deduct penalty if it is active
+	if (applied_penalty > 0) {
+		combined_value_float -= applied_penalty;
+		if (verbose_mode) {
+			printf("Deducting penalty of %d from current link score, new combined value: %.2f\n", applied_penalty, combined_value_float);
+		}
+	}
+
+	// Determine which exp_smoothing_factor to use (up or down)
+    float chosen_smoothing_factor = (combined_value_float >= last_value_sent) ? smoothing_factor : smoothing_factor_down;
+
+	// Apply exponential smoothing
+    smoothed_combined_value = (chosen_smoothing_factor * combined_value_float + (1 - chosen_smoothing_factor) * smoothed_combined_value);
+
+	// Check if enough time has passed
+    long time_diff_ms = (current_time.tv_sec - last_exec_time.tv_sec) * 1000 + (current_time.tv_nsec - last_exec_time.tv_nsec) / 1000000;
+    if (time_diff_ms < min_between_changes_ms) {
+        printf("Skipping profile load: time_diff_ms=%ldms - too soon (min %dms required)\n", time_diff_ms, min_between_changes_ms);
+        selection_busy = false;
+        return;
     }
-    if (combined_value > 2000) {
-        combined_value = 2000;
+	// Clamp combined value within the defined range
+    int combined_value = (int)floor(smoothed_combined_value);
+    combined_value = (combined_value < 1000) ? 1000 : (combined_value > 2000) ? 2000 : combined_value;
+
+    // Calculate percentage change from smoothed baseline value
+    float percent_change = fabs((float)(combined_value - last_value_sent) / last_value_sent) * 100;
+
+    // Determine which hysteresis threshold to use (up or down)
+    float hysteresis_threshold = (combined_value >= last_value_sent) ? hysteresis_percent : hysteresis_percent_down;
+
+    // Check if the change exceeds the chosen hysteresis threshold
+    if (percent_change >= hysteresis_threshold) {
+        printf("Qualified to request profile: %d is > %.2f%% different (%.2f%%)\n", combined_value, hysteresis_threshold, percent_change);
+
+        // Request profile, check if applied
+        if (value_chooses_profile(combined_value)) {
+            printf("Profile %d applied.\n", combined_value);
+            last_value_sent = combined_value;
+            //smoothed_combined_value = (float)combined_value;  // Update baseline for future comparisons - Should be redundant, as this value already came from that
+            last_exec_time = current_time;
+        }
     }
-
-		// Calculate percentage change from baseline value
-	float percent_change = fabs((float)(combined_value - baseline_value) / baseline_value) * 100;
-
-		// Determine which hysteresis threshold to use (up or down)
-	float hysteresis_threshold = (combined_value >= baseline_value) ? hysteresis_percent : hysteresis_percent_down;
-
-		// Check if the change exceeds the chosen hysteresis threshold
-	if (percent_change >= hysteresis_threshold) {
-		printf("Qualified to request profile: %d is > %.2f%% different (%.2f%%)\n", combined_value, hysteresis_threshold, percent_change);
-
-    // Request profile, check if applied
-    if (value_chooses_profile(combined_value)) {
-        printf("Profile %d applied.\n", combined_value);
-        last_value_sent = combined_value;
-        baseline_value = combined_value;
-        last_exec_time = current_time;
-    }
-}
-
-
     selection_busy = false;
 }
 
 
+// request_keyframe function to check if a code exists in the array and has not expired
+bool code_exists(const char *code, struct timespec *current_time) {
+    for (int i = 0; i < num_keyframe_requests; i++) {
+        if (strcmp(keyframe_request_codes[i].code, code) == 0) {
+            // Check if the request is still valid
+            long elapsed_time_ms = (current_time->tv_sec - keyframe_request_codes[i].timestamp.tv_sec) * 1000 +
+                                   (current_time->tv_nsec - keyframe_request_codes[i].timestamp.tv_nsec) / 1000000;
+            if (elapsed_time_ms < EXPIRY_TIME_MS) {
+                return true;  // Code exists and has not expired
+            } else {
+                // Expired: Remove it by shifting the rest down
+                memmove(&keyframe_request_codes[i], &keyframe_request_codes[i + 1],
+                        (num_keyframe_requests - i - 1) * sizeof(KeyframeRequest));
+                num_keyframe_requests--;
+				i--;  // Adjust index to re-check at this position after shift
+                return false;  // Code expired
+            }
+        }
+    }
+    return false;  // Code not found
+}
 
+// Function to add a code to the array
+void add_code(const char *code, struct timespec *current_time) {
+    if (num_keyframe_requests < MAX_CODES) {
+        strncpy(keyframe_request_codes[num_keyframe_requests].code, code, CODE_LENGTH);
+        keyframe_request_codes[num_keyframe_requests].timestamp = *current_time;
+        num_keyframe_requests++;
+    } else {
+        printf("Max keyframe request codes reached. Consider increasing MAX_CODES.\n");
+    }
+}
+
+void cleanup_expired_codes(struct timespec *current_time) {
+    for (int i = 0; i < num_keyframe_requests; ) {
+        // Calculate elapsed time in milliseconds
+        long elapsed_time_ms = (current_time->tv_sec - keyframe_request_codes[i].timestamp.tv_sec) * 1000 +
+                               (current_time->tv_nsec - keyframe_request_codes[i].timestamp.tv_nsec) / 1000000;
+
+        // Remove the expired entry if elapsed time exceeds expiry threshold
+        if (elapsed_time_ms >= EXPIRY_TIME_MS) {
+            memmove(&keyframe_request_codes[i], &keyframe_request_codes[i + 1],
+                    (num_keyframe_requests - i - 1) * sizeof(KeyframeRequest));
+            num_keyframe_requests--;  // Decrease the count of requests
+        } else {
+            i++;  // Only move to the next entry if no removal
+        }
+    }
+}
+
+// Main function to handle special commands
 void special_command_message(const char *msg) {
-    // Move past "special:"
-    const char *cleaned_msg = msg + 8;
-	const char *idrCommand = idrCommandTemplate;
+    const char *cleaned_msg = msg + 8;  // Skip "special:"
+    const char *idrCommand = idrCommandTemplate;
 
-    // Find the next ':'
     char *separator = strchr(cleaned_msg, ':');
+    char code[CODE_LENGTH] = {0};  // Buffer for unique request code
+
     if (separator) {
-        // Truncate the string at the first ':'
-        *separator = '\0';
+        *separator = '\0';  // Split at the first ':'
+        strncpy(code, separator + 1, CODE_LENGTH - 1);  // Copy unique code if present
     }
 
-    // Process the cleaned message
-    if (strcmp(cleaned_msg, "pause_adaptive") == 0) {
+    // Check for keyframe request first
+    if (allow_request_keyframe && strcmp(cleaned_msg, "request_keyframe") == 0 && code[0] != '\0') {
+        struct timespec current_time;
+        clock_gettime(CLOCK_MONOTONIC, &current_time);
+
+        // Clean up expired codes before proceeding
+        cleanup_expired_codes(&current_time);
+
+        // Check if the keyframe request interval has elapsed
+        long elapsed_ms = (current_time.tv_sec - last_keyframe_request_time.tv_sec) * 1000 +
+                          (current_time.tv_nsec - last_keyframe_request_time.tv_nsec) / 1000000;
+
+        if (elapsed_ms >= request_keyframe_interval_ms) {
+            if (!code_exists(code, &current_time)) {
+                add_code(code, &current_time);  // Store new code and timestamp
+
+                // Request new keyframe
+                char quotedCommand[BUFFER_SIZE];
+                snprintf(quotedCommand, sizeof(quotedCommand), "\"%s\"", idrCommand);
+                if (verbose_mode) {
+                    printf("Special: Requesting Keyframe for code: %s\n", code);
+                }
+                system(quotedCommand);
+                last_keyframe_request_time = current_time;
+				total_keyframe_requests++;
+            } else {
+                if (verbose_mode) {
+					printf("Already requested keyframe for code: %s\n", code);
+				}
+			}
+        } else {
+                if (verbose_mode) {
+					printf("Keyframe request ignored. Interval not met for code: %s\n", code);
+				}
+        }
+
+    } else if (strcmp(cleaned_msg, "pause_adaptive") == 0) {
         pthread_mutex_lock(&pause_mutex);
         paused = true;
         pthread_mutex_unlock(&pause_mutex);
         printf("Paused adaptive mode\n");
+
     } else if (strcmp(cleaned_msg, "resume_adaptive") == 0) {
         pthread_mutex_lock(&pause_mutex);
         paused = false;
         pthread_mutex_unlock(&pause_mutex);
         printf("Resumed adaptive mode\n");
-	//} else if (strcmp(cleaned_msg, "drop_gop") == 0) {
-    //    printf("Dropping GOP due to lost packets\n");
-	//	system("curl localhost/api/v1/set?video0.gopSize=0.01 &");
-	//	execute_channels_script(998, 1000);
-    
-	} else if (allow_request_keyframe && strcmp(cleaned_msg, "request_keyframe") == 0) {
-        struct timespec current_time;
-		clock_gettime(CLOCK_MONOTONIC, &current_time);  // Use CLOCK_MONOTONIC
-		long time_diff_ms = (current_time.tv_sec - last_keyframe_request_time.tv_sec) * 1000 +
-        (current_time.tv_nsec - last_keyframe_request_time.tv_nsec) / 1000000;
 
-        if (time_diff_ms >= request_keyframe_interval_ms) {  // Check if enough time has passed
-            printf("Requesting new keyframe\n");
-            // Add quotes			
-			char quotedCommand[BUFFER_SIZE]; // Define a buffer for the quoted command
-			snprintf(quotedCommand, sizeof(quotedCommand), "\"%s\"", idrCommandTemplate); // Add quotes	around the command
-			if (verbose_mode) {
-				puts("Special: Requesting Keyframe");
-			}
-			system(quotedCommand);
-            // Update the last keyframe request time
-            last_keyframe_request_time = current_time;
-        } else {
-            printf("Skipping keyframe request: time_diff_ms=%ldms\n", time_diff_ms);
-        }
     } else {
-        // Handle unknown commands if needed
         printf("Unknown or disabled command: %s\n", cleaned_msg);
     }
 }
+
+
+//function to get latest tx dropped
+long get_wlan0_tx_dropped() {
+    FILE *fp;
+    char line[256];
+    long tx_dropped = 0;
+
+    // Open the /proc/net/dev file
+    fp = fopen("/proc/net/dev", "r");
+    if (fp == NULL) {
+        perror("Failed to open /proc/net/dev");
+        return -1;
+    }
+
+    // Skip the first two lines (headers)
+    fgets(line, sizeof(line), fp);
+    fgets(line, sizeof(line), fp);
+
+    // Read each line to find the wlan0 interface
+    while (fgets(line, sizeof(line), fp) != NULL) {
+        if (strstr(line, "wlan0:") != NULL) {
+            // Locate the stats after the "wlan0:" label
+            char *stats_str = strchr(line, ':');
+            if (stats_str) {
+                stats_str++;  // Move past the colon
+
+                // Tokenize to skip to the 12th field
+                char *token;
+                int field_count = 0;
+                token = strtok(stats_str, " ");
+
+                while (token != NULL) {
+                    field_count++;
+                    if (field_count == 12) {
+                        tx_dropped = strtol(token, NULL, 10);
+                        break;
+                    }
+                    token = strtok(NULL, " ");
+                }
+            }
+            break;
+        }
+    }
+
+    // Close the file
+    fclose(fp);
+
+    //calculate difference
+	long latest_tx_dropped = tx_dropped - global_total_tx_dropped;
+	//update global total
+	global_total_tx_dropped = tx_dropped;
+	return latest_tx_dropped;
+
+}
+
+void *periodic_tx_dropped(void *arg) {
+	    const char *idrCommand = idrCommandTemplate;
+
+	while (1) {
+			long latest_tx_dropped = get_wlan0_tx_dropped();
+
+			if (allow_request_keyframe && latest_tx_dropped > 0) {
+				struct timespec current_time;
+				clock_gettime(CLOCK_MONOTONIC, &current_time);
+				// request new keyframe
+				char quotedCommand[BUFFER_SIZE];
+                snprintf(quotedCommand, sizeof(quotedCommand), "\"%s\"", idrCommand);
+                if (verbose_mode) {
+                    printf("requesting keyframe for locally dropped tx packet\n");
+                }
+                system(quotedCommand);
+                last_keyframe_request_time = current_time;
+				total_keyframe_requests++;
+			}
+
+			// Sleep for 100 milliseconds (100000 microseconds)
+			usleep(100000);
+	}
+
+}
+
 
 void *count_messages(void *arg) {
     int local_count;
@@ -657,9 +880,9 @@ void *count_messages(void *arg) {
         pthread_mutex_lock(&pause_mutex);
         if (local_count == 0 && !paused) {
             printf("No messages received in %dms, sending 999\n", fallback_ms);
-            start_selection(999, 1000);
+            start_selection(999, 1000, 0);
 		} else {
-            
+
 			if (verbose_mode) {
 				printf("Messages per %dms: %d\n", fallback_ms, local_count);
 			}
@@ -670,16 +893,16 @@ void *count_messages(void *arg) {
 }
 
 void process_message(const char *msg) {
-    		
+
 	// Declare  default local variables
     struct timeval tv;
     int transmitted_time = 0;
     int link_value_rssi = 999;
     int link_value_snr = 999;
 	int recovered = 0;
-    int lost = 0;
+    int recovered_otime = 0;
     int rssi1 = -105;
-    int rssi2 = -105;
+    int snr1 = 0;
     int rssi3 = -105;
     int rssi4 = -105;
 
@@ -710,13 +933,13 @@ void process_message(const char *msg) {
                 recovered = atoi(token);
                 break;
             case 4:
-                lost = atoi(token);
+                recovered_otime = atoi(token);
                 break;
             case 5:
                 rssi1 = atoi(token);
                 break;
             case 6:
-                rssi2 = atoi(token);
+                snr1 = atoi(token);
                 break;
             case 7:
                 rssi3 = atoi(token);
@@ -731,16 +954,15 @@ void process_message(const char *msg) {
         token = strtok(NULL, ":");
         index++;
     }
-	
-	sprintf(global_rssi_string, " %d", rssi1);
 
-    // Print parsed values (for demonstration purposes)
-   // printf("Parsed values: %d, %d, %d, %d, %d, %d, %d, %d, %d\n",
-     //      transmitted_time, link_value_rssi, link_value_snr, recovered, lost, rssi1, rssi2, rssi3, rssi4);
+	//sprintf(global_general_osd_string, " %d %d %d %d p%d", recovered, recovered_otime, rssi1, snr1, applied_penalty);
+
+	sprintf(global_general_osd_string, " idr%d snr%d pnlty%d", total_keyframe_requests, snr1, applied_penalty);
+
 
     // Free the duplicated string
     free(msgCopy);
-	
+
 	// Only proceed with time synchronization if it hasn't been set yet
     if (!time_synced) {
         if (transmitted_time > 0) {
@@ -755,12 +977,12 @@ void process_message(const char *msg) {
         }
 	}
 
-    // Handle the adaptive mode pause state
+    // Start selection if not paused
     pthread_mutex_lock(&pause_mutex);
     if (!paused) {
-        start_selection(link_value_rssi, link_value_snr);
+        start_selection(link_value_rssi, link_value_snr, recovered);
     } else {
-        printf("Adaptive mode paused, skipping execution\n");
+        printf("Adaptive mode paused, waiting for resume command...\n");
     }
         pthread_mutex_unlock(&pause_mutex);
 
@@ -777,13 +999,13 @@ void print_usage() {
 }
 
 int main(int argc, char *argv[]) {
-    
+
 	 // Load configuration from the config file
     load_config(CONFIG_FILE);
 	// Load profiles from profile file
     load_profiles(PROFILE_FILE);
 
-	
+
 	int sockfd;
     struct sockaddr_in server_addr, client_addr;
     socklen_t client_addr_len = sizeof(client_addr);
@@ -808,7 +1030,7 @@ int main(int argc, char *argv[]) {
             return 1;
         }
     }
-	
+
     // Create UDP socket
     if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
         perror("Socket creation failed");
@@ -828,10 +1050,10 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-   
+
 	printf("Listening on UDP port %d, IP: %s...\n", port, ip);
-    
-	
+
+
 	// Check if roi_focus_mode is enabled and call the setup_roi function
 	if (roi_focus_mode) {
 		if (setup_roi() != 0) {
@@ -840,15 +1062,19 @@ int main(int argc, char *argv[]) {
 			printf("Focus mode regions set in majestic.yaml\n");
 		}
 	}
-	
+
 
     // Prepare counting thread
 	pthread_t count_thread;
     pthread_create(&count_thread, NULL, count_messages, NULL);
-	
+
 	// Prepare periodic OSD update thread
 	pthread_t osd_thread;
 	pthread_create(&osd_thread, NULL, periodic_update_osd, NULL);
+
+	// Prepare periodic_tx_dropped thread
+	pthread_t tx_dropped_thread;
+    pthread_create(&tx_dropped_thread, NULL, periodic_tx_dropped, NULL);
 
 
  while (1) {
@@ -859,7 +1085,7 @@ int main(int argc, char *argv[]) {
             perror("recvfrom failed");
             break;
         }
-		
+
 		// Increment message count
 			pthread_mutex_lock(&count_mutex);
 			message_count++;
@@ -876,9 +1102,9 @@ int main(int argc, char *argv[]) {
         // Print the message length and content
         if (verbose_mode) {
 			printf("Received message (%u bytes): %s\n", msg_length, buffer + sizeof(msg_length));
-					
+
 		}
-		
+
 		// Strip length off the start of the message
 		char *message = buffer + sizeof(uint32_t);
 		//See if it's special otherwise just process it
@@ -886,8 +1112,8 @@ int main(int argc, char *argv[]) {
 			special_command_message(message);
 		} else {
 			process_message(message);
-		}	
-		
+		}
+
     }
 
     // Close the socket
