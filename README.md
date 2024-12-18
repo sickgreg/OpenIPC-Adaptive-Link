@@ -37,7 +37,7 @@ sudo ./alink_install.sh gs install
 
 Service will be added to systemd. Use stop | start | disable | enable | status with `sudo systemctl stop alink_gs`
 
-`alink_gs.conf` config file will be created in `/config/ if it exists or `/home/radxa` if it exists or finally `/etc` if neither of those exist
+`alink_gs.conf` config file will be created in `/config/` if it exists or `/home/radxa` if it exists or finally `/etc` if neither of those exist
 
 4.  Set power level on your ground station wifi card(s)
 
