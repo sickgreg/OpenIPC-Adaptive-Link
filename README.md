@@ -27,7 +27,16 @@ reboot
 Config files are `/etc/txprofiles.conf` and `/etc/alink.conf`
 
 3. Auto-install on ground station
+   
+   Note: if you already have a version older than 0.46.0, please remove first:
 
+```
+curl -L -o alink_install.sh https://raw.githubusercontent.com/sickgreg/OpenIPC-Adaptive-Link/refs/heads/main/alink_install.sh
+sudo chmod +x alink_install.sh
+sudo ./alink_install.sh gs remove
+```
+
+Then to install:
 
 ```
 curl -L -o alink_install.sh https://raw.githubusercontent.com/sickgreg/OpenIPC-Adaptive-Link/refs/heads/main/alink_install.sh
