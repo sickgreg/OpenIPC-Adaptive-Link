@@ -129,12 +129,27 @@ EOF
 			echo_green "Adaptive Link installed successfully."
 			;;
 		remove)
-			echo_blue "Removing Adaptive Link for Ground Station..."
-			 systemctl stop $FILE_NAME.service
-			 systemctl disable $FILE_NAME.service
-			rm -f $FILE $FILE_CONF $PATH_SERVICE
-			echo_green "Adaptive Link removed."
-			;;
+	
+# Check and stop the new Ground Station service if its .service file exists
+if [ -f "$PATH_SERVICE" ]; then
+    sudo systemctl stop $FILE_NAME.service
+    sudo systemctl disable $FILE_NAME.service
+    sudo rm -f $FILE $FILE_CONF $PATH_SERVICE
+    echo_green "Adaptive Link ($FILE_NAME) removed."
+else
+    echo_blue "Service file $PATH_SERVICE not found, skipping..."
+fi
+
+# Check and stop the old Adaptive Link service if its .service file exists
+if [ -f "/etc/systemd/system/adaptive_link.service" ]; then
+    sudo systemctl stop adaptive_link.service
+    sudo systemctl disable adaptive_link.service
+    sudo rm -f /usr/bin/adaptive_link /etc/adaptive_link.conf /etc/systemd/system/adaptive_link.service
+    echo_green "Old Adaptive Link (adaptive_link) removed."
+else
+    echo_blue "Service file /etc/systemd/system/adaptive_link.service not found, skipping..."
+fi
+;;
 		update)
 			echo_blue "Updating Adaptive Link for Ground Station..."
 			URL_ALINK_GS=$(github_asset_url "alink_gs")
