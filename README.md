@@ -1,5 +1,5 @@
 # OpenIPC-Adaptive-Link
-**Greg's Adaptive-Link - For OpenIPC Camera and Radxa Zero 3w/e Ground Station**
+**Greg's Adaptive-Link - For OpenIPC Camera and Radxa Zero 3w/e or Android PixelPilot Ground Station**
 
 Warning: Select your drone adapter type EU or AU in /etc/alink.conf and leave alone or mindfully set power levels appropriately in /etc/txprofiles.conf.  Default is EU, safe 40 to 45.  AU won't auto-set power until changing /etc/alink.conf (todo have auto card detection)
 
@@ -26,7 +26,9 @@ reboot
 ```
 Config files are `/etc/txprofiles.conf` and `/etc/alink.conf`
 
-3. Auto-install on ground station
+3. PixelPilot Android... Still testing early pre-release.  Stay tuned.
+
+4. Auto-install on ground station
    
    Note: if you already have a version older than 0.46.0, please remove first:
 
@@ -48,7 +50,7 @@ Service will be added to systemd. Use stop | start | disable | enable | status w
 
 `alink_gs.conf` config file will be created in `/config/` if it exists or `/home/radxa` if it exists or finally `/etc` if neither of those exist
 
-4.  Set power level on your ground station wifi card(s)
+5.  Set power level on your ground station wifi card(s)
 
 alink_drone listens for an informative_heartbeat from the ground station to decide on link speed and range and therefor video quality.  If it doesn't hear anything for a preset period of time, it will fall back to profile 999, which is set to MCS 0 for the furthest possible range.  If you're not getting out of this mode, the drone isn't hearing the ground station.
 
