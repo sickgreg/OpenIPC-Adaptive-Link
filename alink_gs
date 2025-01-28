@@ -39,10 +39,10 @@ DEFAULT_CONFIG = {
         'version': VERSION,  # Current version of the script
         'message_interval': '100',  # Time between sending messages (milliseconds)
         'use_best_rssi': 'True',  # Option to pick best available RSSI for link health score
-        'min_rssi': '-85',  # Min RSSI range for link health
-        'max_rssi': '-50',  # Max RSSI range for link health
-        'min_snr': '10',  # Min SNR range for link health
-        'max_snr': '30',  # Max SNR range for link health
+        'min_rssi': '-80',  # Min RSSI range for link health
+        'max_rssi': '-30',  # Max RSSI range for link health
+        'min_snr': '12',  # Min SNR range for link health
+        'max_snr': '38',  # Max SNR range for link health
         'host': '127.0.0.1',  # Host address to connect to
         'port': '8003',  # Port to connect to
         'udp_ip': '10.5.0.10',  # UDP IP to send link health data
@@ -142,14 +142,14 @@ def request_keyframe():
         send_udp(special_message)  # Call send_udp to send the special message
         if verbose_mode:
             print(f"Sent special message: {special_message}, attempt {attempt + 1}/{num_attempts}")
-        time.sleep(0.025)  # Wait before the next attempt
+        time.sleep(0.05)  # Wait before the next attempt
     
 def drop_gop():
     """
     Send a special message to drop the gop
     """
     special_message = "special:drop_gop"
-    num_attempts = 0  # Number of times to send the message
+    num_attempts = 5  # Number of times to send the message
 
     for attempt in range(num_attempts):
         send_udp(special_message)  # Call send_udp to send the special message

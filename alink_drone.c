@@ -17,9 +17,10 @@
 #define DEFAULT_IP "10.5.0.10"
 #define CONFIG_FILE "/etc/alink.conf"
 #define PROFILE_FILE "/etc/txprofiles.conf"
-#define MAX_PROFILES 15
+#define MAX_PROFILES 20
 #define DEFAULT_PACE_EXEC_MS 50
 
+// Profile struct
 typedef struct {
     int rangeMin;
     int rangeMax;
@@ -31,7 +32,26 @@ typedef struct {
     float setGop;
     int wfbPower;
     char ROIqp[20];
+	int bandwidth;
+	int divideFpsBy;
 } Profile;
+
+Profile profiles[MAX_PROFILES];
+
+// osd2udp struct
+typedef struct {
+    int udp_out_sock;
+    char udp_out_ip[INET_ADDRSTRLEN];
+    int udp_out_port;
+} osd_udp_config_t;
+
+// OSD strings
+char global_regular_osd[64] = "initializing...";
+char global_profile_osd[64] = "initializing...";
+char global_gs_stats_osd[64] = "initializing...";
+char global_extra_stats_osd[64] = "initializing...";
+
+int global_fps = 120;
 
 int prevWfbPower = -1;
 float prevSetGop = -1.0;
@@ -41,7 +61,8 @@ int prevSetFecK = -1;
 int prevSetFecN = -1;
 int prevSetBitrate = -1;
 char prevROIqp[20] = "-1";
-Profile profiles[MAX_PROFILES];
+int prevDivideFpsBy = -1;
+
 
 long pace_exec = DEFAULT_PACE_EXEC_MS * 1000L;
 int currentProfile = -1;
@@ -54,16 +75,14 @@ int hold_modes_down_s = 2;
 int min_between_changes_ms = 100;
 int request_keyframe_interval_ms = 50;
 bool allow_request_keyframe = 1;
+bool allow_rq_kf_by_tx_d = 1;
 int hysteresis_percent = 15;
 int hysteresis_percent_down = 5;
 int baseline_value = 100;
 float smoothing_factor = 0.5;
 float smoothing_factor_down = 0.8;
 float smoothed_combined_value = 1500;
-char global_general_osd_string[64] = "no data yet";
-char global_msposdCommand[384] = "echo 'msposd string not ready yet'";
-char global_dropped_tx_string[20] = "init";
-char prevFinalCommand[512] = "init";
+
 int applied_penalty = 0;
 struct timespec penalty_timestamp;
 int fec_rec_alarm = 20;
@@ -74,7 +93,7 @@ int fallback_ms = 1000;
 bool idr_every_change = false;
 bool roi_focus_mode = false;
 
-char powerCommandTemplate[100], mcsCommandTemplate[100], bitrateCommandTemplate[150], gopCommandTemplate[100], fecCommandTemplate[100], roiCommandTemplate[150], idrCommandTemplate[100], msposdCommandTemplate[384];
+char fpsCommandTemplate[150], powerCommandTemplate[100], mcsCommandTemplate[100], bitrateCommandTemplate[150], gopCommandTemplate[100], fecCommandTemplate[100], roiCommandTemplate[150], idrCommandTemplate[100], msposdCommandTemplate[384];
 bool verbose_mode = false;
 bool selection_busy = false;
 int message_count = 0;      // Global variable for message count
@@ -103,9 +122,6 @@ typedef struct {
 // Static array of keyframe requests
 static KeyframeRequest keyframe_request_codes[MAX_CODES];
 static int num_keyframe_requests = 0;  // Track the number of stored keyframe requests
-
-
-
 
 
 long get_monotonic_time() {
@@ -151,6 +167,8 @@ void load_config(const char* filename) {
                 idr_every_change = atoi(value);
 			} else if (strcmp(key, "allow_request_keyframe") == 0) {
                 allow_request_keyframe = atoi(value);
+			} else if (strcmp(key, "allow_rq_kf_by_tx_d") == 0) {
+                allow_rq_kf_by_tx_d = atoi(value);
 			} else if (strcmp(key, "hysteresis_percent") == 0) {
                 hysteresis_percent = atoi(value);
 			} else if (strcmp(key, "hysteresis_percent_down") == 0) {
@@ -169,6 +187,8 @@ void load_config(const char* filename) {
                 apply_penalty_for_s = atoi(value);
             } else if (strcmp(key, "powerCommand") == 0) {
                 strncpy(powerCommandTemplate, value, sizeof(powerCommandTemplate));
+			} else if (strcmp(key, "fpsCommandTemplate") == 0) {
+                strncpy(fpsCommandTemplate, value, sizeof(fpsCommandTemplate));
             } else if (strcmp(key, "mcsCommand") == 0) {
                 strncpy(mcsCommandTemplate, value, sizeof(mcsCommandTemplate));
             } else if (strcmp(key, "bitrateCommand") == 0) {
@@ -182,8 +202,8 @@ void load_config(const char* filename) {
             } else if (strcmp(key, "idrCommand") == 0) {
                 strncpy(idrCommandTemplate, value, sizeof(idrCommandTemplate));
 
-			} else if (strcmp(key, "msposdCommand") == 0) {
-                strncpy(msposdCommandTemplate, value, sizeof(msposdCommandTemplate));
+            } else if (strcmp(key, "msposdMSG") == 0) {
+                strncpy(global_regular_osd, value, sizeof(global_regular_osd));
 
             } else {
                 fprintf(stderr, "Warning: Unrecognized configuration key: %s\n", key);
@@ -199,29 +219,73 @@ void load_config(const char* filename) {
 }
 
 
-
-// Function to load profiles from profile file
 void load_profiles(const char* filename) {
     FILE *file = fopen(filename, "r");
     if (!file) {
-        fprintf(stderr, "Problem loading %s: ", PROFILE_FILE);
+        fprintf(stderr, "Problem loading %s: ", filename);
         perror(""); // Print system error message
         exit(1);
     }
 
+    char line[256];
     int i = 0;
-    while (fscanf(file, "%d - %d %s %d %d %d %d %f %d %s",
-                  &profiles[i].rangeMin, &profiles[i].rangeMax, profiles[i].setGI,
-                  &profiles[i].setMCS, &profiles[i].setFecK, &profiles[i].setFecN,
-                  &profiles[i].setBitrate, &profiles[i].setGop, &profiles[i].wfbPower,
-                  profiles[i].ROIqp) != EOF && i < MAX_PROFILES) {
-        i++;
+
+    while (fgets(line, sizeof(line), file) && i < MAX_PROFILES) {
+        // Skip comments
+        char *comment = strchr(line, '#');
+        if (comment) {
+            *comment = '\0'; // Truncate the line at the comment
+        }
+
+        // Trim trailing whitespace and newlines
+        line[strcspn(line, "\r\n")] = '\0';
+
+        // Skip empty or whitespace-only lines
+        if (strlen(line) == 0) {
+            continue;
+        }
+
+        // Parse the line
+        if (sscanf(line, "%d - %d %s %d %d %d %d %f %d %s %d %d",
+                   &profiles[i].rangeMin, &profiles[i].rangeMax, profiles[i].setGI,
+                   &profiles[i].setMCS, &profiles[i].setFecK, &profiles[i].setFecN,
+                   &profiles[i].setBitrate, &profiles[i].setGop, &profiles[i].wfbPower,
+                   profiles[i].ROIqp, &profiles[i].bandwidth, &profiles[i].divideFpsBy) == 12) {
+            i++;
+        } else {
+            fprintf(stderr, "Malformed line ignored: %s\n", line);
+        }
     }
 
     fclose(file);
 }
 
 
+// Function to read fps from majestic.yaml
+int get_video_fps() {
+    char command[] = "cli --get .video0.fps";
+    char buffer[128]; // Buffer to store command output
+    FILE *pipe;
+    int fps = 0;
+
+    // Open a pipe to execute the command
+    pipe = popen(command, "r");
+    if (pipe == NULL) {
+        fprintf(stderr, "Failed to run cli --get .video0.fps\n");
+        return -1; // Return an error code
+    }
+
+    // Read the output from the command
+    if (fgets(buffer, sizeof(buffer), pipe) != NULL) {
+        // Convert the output string to an integer
+        fps = atoi(buffer);
+    }
+
+    // Close the pipe
+    pclose(pipe);
+
+    return fps;
+}
 
 // Function to setup roi in majestic.yaml based on resolution
 int setup_roi() {
@@ -378,13 +442,14 @@ void execute_command(const char* command) {
 void apply_profile(Profile* profile) {
 
     char powerCommand[100];
+	char fpsCommand[150];
     char mcsCommand[100];
     char bitrateCommand[150];
     char gopCommand[100];
     char fecCommand[100];
     char roiCommand[150];
     const char *idrCommand;
-    char msposdCommand[512];
+    //char msposdCommand[512];
 
     idrCommand = idrCommandTemplate;
 
@@ -404,9 +469,17 @@ void apply_profile(Profile* profile) {
     int currentSetBitrate = profile->setBitrate;
     char currentROIqp[20];
     strcpy(currentROIqp, profile->ROIqp);
+	int currentBandwidth = profile->bandwidth;
+    int currentDivideFpsBy = profile->divideFpsBy;
 
     // Logic to determine execution order and see if values are different
     if (currentProfile > previousProfile) {
+
+		if (currentDivideFpsBy != prevDivideFpsBy) {
+            sprintf(fpsCommand, fpsCommandTemplate, global_fps / currentDivideFpsBy);
+            execute_command(fpsCommand);
+            prevDivideFpsBy = currentDivideFpsBy;
+		}
 
         if (currentWfbPower != prevWfbPower) {
             sprintf(powerCommand, powerCommandTemplate, currentWfbPower * 50);
@@ -431,7 +504,7 @@ void apply_profile(Profile* profile) {
             prevSetFecN = currentSetFecN;
         }
         if (currentSetBitrate != prevSetBitrate) {
-            sprintf(bitrateCommand, bitrateCommandTemplate, currentSetBitrate);
+            sprintf(bitrateCommand, bitrateCommandTemplate, currentSetBitrate * currentDivideFpsBy);
             execute_command(bitrateCommand);
             prevSetBitrate = currentSetBitrate;
         }
@@ -446,8 +519,14 @@ void apply_profile(Profile* profile) {
 
     } else {
 
+		if (currentDivideFpsBy != prevDivideFpsBy) {
+            sprintf(fpsCommand, fpsCommandTemplate, global_fps / currentDivideFpsBy);
+            execute_command(fpsCommand);
+            prevDivideFpsBy = currentDivideFpsBy;
+		}
+
         if (currentSetBitrate != prevSetBitrate) {
-            sprintf(bitrateCommand, bitrateCommandTemplate, currentSetBitrate);
+            sprintf(bitrateCommand, bitrateCommandTemplate, currentSetBitrate * currentDivideFpsBy);
             execute_command(bitrateCommand);
             prevSetBitrate = currentSetBitrate;
         }
@@ -484,49 +563,73 @@ void apply_profile(Profile* profile) {
 		}
     }
 
-
-	// Instantly display stats on msposd
-	sprintf(msposdCommand, msposdCommandTemplate, timeElapsed, profile->setBitrate, profile->setMCS, profile->setGI, profile->setFecK, profile->setFecN, profile->wfbPower, profile->setGop, global_general_osd_string, global_dropped_tx_string);
-	//execute_command(msposdCommand);
-
-	// Create global msposd string with %s instead of global_general_osd_string so it can be placed there later and %s for tx_dropped
-	snprintf(global_msposdCommand, sizeof(global_msposdCommand), msposdCommandTemplate, timeElapsed, profile->setBitrate, profile->setMCS, profile->setGI, profile->setFecK, profile->setFecN, profile->wfbPower, profile->setGop, "%s, %s");
-
-
-    //sprintf(msposdCommand, "echo \"%ld s %d M:%d %s F:%d/%d P:%d G:%.1f&L30&F28 CPU:&C &Tc\" >/tmp/MSPOSD.msg",
-    //        timeElapsed, profile->setBitrate, profile->setMCS, profile->setGI,
-    //       profile->setFecK, profile->setFecN, profile->wfbPower, profile->setGop);
-    //execute_command_no_quotes(msposdCommand); // Execute the msposd command
-
+	// Generate string with profile stats for osd
+	sprintf(global_profile_osd, "%lds %d %s%d %d/%d Pw%d g%.1f", 
+        timeElapsed, 
+        profile->setBitrate, 
+        profile->setGI, 
+        profile->setMCS, 
+        profile->setFecK,
+        profile->setFecN, 
+        profile->wfbPower, 
+        profile->setGop);
 }
 
-
-
 void *periodic_update_osd(void *arg) {
-    char finalCommand[512];
+    osd_udp_config_t *osd_config = (osd_udp_config_t *)arg;
 
-    while (true) {
-        // Sleep for 1 second
-        sleep(1);
-
-        //create string out of global dropped tx packets
-		char d_tx_str[20]; sprintf(d_tx_str, "%ld", global_total_tx_dropped);
-        strcpy(global_dropped_tx_string, d_tx_str);
-
-        // Format the command string
-        sprintf(finalCommand, global_msposdCommand, global_general_osd_string, d_tx_str);
-
-        // Compare with the previous command to avoid redundant execution
-        if (strcmp(finalCommand, prevFinalCommand) != 0) {
-            // Execute the formatted command
-            execute_command(finalCommand);
-            // Store the current command for future comparison
-            strcpy(prevFinalCommand, finalCommand);
+    struct sockaddr_in udp_out_addr;
+    if (osd_config->udp_out_sock != -1) {
+        // Initialize the target address for UDP
+        memset(&udp_out_addr, 0, sizeof(udp_out_addr));
+        udp_out_addr.sin_family = AF_INET;
+        udp_out_addr.sin_port = htons(osd_config->udp_out_port);
+        if (inet_pton(AF_INET, osd_config->udp_out_ip, &udp_out_addr.sin_addr) <= 0) {
+            perror("Invalid IP address for OSD UDP output");
+            pthread_exit(NULL);
         }
     }
 
+    while (true) {
+        sleep(1);
+
+        // Generate string with extra OSD stats to combine with other strings
+        snprintf(global_extra_stats_osd, sizeof(global_extra_stats_osd), "pnlt%d xtx%ld idr%d",
+                 applied_penalty,
+				 global_total_tx_dropped,
+				 total_keyframe_requests);
+
+        // Combine all the strings: profile stats + regular msposd string + gs stats + extra stats
+        char full_osd_string[256];
+        snprintf(full_osd_string, sizeof(full_osd_string), "%s %s %s %s",
+                 global_profile_osd, global_regular_osd, global_gs_stats_osd, global_extra_stats_osd);
+        
+		// Either update OSD remotely over udp, or update local file
+		if (osd_config->udp_out_sock != -1) {
+            // Send the OSD string over UDP
+            ssize_t sent_bytes = sendto(osd_config->udp_out_sock, full_osd_string, strlen(full_osd_string), 0,
+                                        (struct sockaddr *)&udp_out_addr, sizeof(udp_out_addr));
+            if (sent_bytes < 0) {
+                perror("Error sending OSD string over UDP");
+            }
+        } else {
+            // Write to /tmp/MSPOSD.msg
+            FILE *file = fopen("/tmp/MSPOSD.msg", "w");
+            if (file == NULL) {
+                perror("Error opening /tmp/MSPOSD.msg");
+                continue; // Skip this iteration if the file cannot be opened
+            }
+
+            if (fwrite(full_osd_string, sizeof(char), strlen(full_osd_string), file) != strlen(full_osd_string)) {
+                perror("Error writing to /tmp/MSPOSD.msg");
+            }
+
+            fclose(file);
+        }
+    }
     return NULL;
 }
+
 
 
 bool value_chooses_profile(int input_value) {
@@ -734,17 +837,17 @@ void special_command_message(const char *msg) {
     }
 
     // Check for keyframe request first
-    if (allow_request_keyframe && strcmp(cleaned_msg, "request_keyframe") == 0 && code[0] != '\0') {
+    if (allow_request_keyframe && prevSetGop > 0.5 && strcmp(cleaned_msg, "request_keyframe") == 0 && code[0] != '\0') {
         struct timespec current_time;
         clock_gettime(CLOCK_MONOTONIC, &current_time);
-
+        
         // Clean up expired codes before proceeding
         cleanup_expired_codes(&current_time);
 
         // Check if the keyframe request interval has elapsed
         long elapsed_ms = (current_time.tv_sec - last_keyframe_request_time.tv_sec) * 1000 +
                           (current_time.tv_nsec - last_keyframe_request_time.tv_nsec) / 1000000;
-
+        
         if (elapsed_ms >= request_keyframe_interval_ms) {
             if (!code_exists(code, &current_time)) {
                 add_code(code, &current_time);  // Store new code and timestamp
@@ -782,7 +885,7 @@ void special_command_message(const char *msg) {
         printf("Resumed adaptive mode\n");
 
     } else {
-        printf("Unknown or disabled command: %s\n", cleaned_msg);
+        printf("Unknown or disabled special command: %s\n", cleaned_msg);
     }
 }
 
@@ -832,7 +935,7 @@ long get_wlan0_tx_dropped() {
 
     // Close the file
     fclose(fp);
-
+	
     //calculate difference
 	long latest_tx_dropped = tx_dropped - global_total_tx_dropped;
 	//update global total
@@ -842,31 +945,44 @@ long get_wlan0_tx_dropped() {
 }
 
 void *periodic_tx_dropped(void *arg) {
-	    const char *idrCommand = idrCommandTemplate;
+    const char charset[] = "abcdefghijklmnopqrstuvwxyz"; // Lowercase letters
+    static int seeded = 0;
 
-	while (1) {
-			long latest_tx_dropped = get_wlan0_tx_dropped();
+    while (1) {
+        long latest_tx_dropped = get_wlan0_tx_dropped();
 
-			if (allow_request_keyframe && latest_tx_dropped > 0) {
-				struct timespec current_time;
-				clock_gettime(CLOCK_MONOTONIC, &current_time);
-				// request new keyframe
-				char quotedCommand[BUFFER_SIZE];
-                snprintf(quotedCommand, sizeof(quotedCommand), "\"%s\"", idrCommand);
-                if (verbose_mode) {
-                    printf("requesting keyframe for locally dropped tx packet\n");
-                }
-                system(quotedCommand);
-                last_keyframe_request_time = current_time;
-				total_keyframe_requests++;
-			}
+        if (allow_rq_kf_by_tx_d && prevSetGop > 0.5 && latest_tx_dropped > 0) {
+         
+            // Seed the random number generator (once per program execution)
+            if (!seeded) {
+                srand((unsigned int)time(NULL));
+                seeded = 1;
+            }
 
-			// Sleep for 100 milliseconds (100000 microseconds)
-			usleep(100000);
-	}
+            // Generate a random string of lowercase letters
+            char random_string[4 + 1];
+            for (int i = 0; i < 4; i++) {
+                random_string[i] = charset[rand() % (sizeof(charset) - 1)];
+            }
+            random_string[4] = '\0'; // Null terminator
 
+            // Create the keyframe request string
+            char keyframe_request[64];
+            snprintf(keyframe_request, sizeof(keyframe_request), "special:request_keyframe:%s", random_string);
+
+            // Pass the generated string to the second function
+            special_command_message(keyframe_request);
+
+            if (verbose_mode) {
+                printf("Requesting keyframe for locally dropped tx packet\n");
+            }
+
+        }
+
+        // Sleep for 100 milliseconds (100000 microseconds)
+        usleep(100000);  
+    }
 }
-
 
 void *count_messages(void *arg) {
     int local_count;
@@ -955,13 +1071,14 @@ void process_message(const char *msg) {
         index++;
     }
 
-	//sprintf(global_general_osd_string, " %d %d %d %d p%d", recovered, recovered_otime, rssi1, snr1, applied_penalty);
-
-	sprintf(global_general_osd_string, " idr%d snr%d pnlty%d", total_keyframe_requests, snr1, applied_penalty);
-
-
     // Free the duplicated string
     free(msgCopy);
+
+	// Create osd string with gs information
+	sprintf(global_gs_stats_osd, "rssi%d, snr%d fec%d",
+				rssi1,
+				snr1,
+				recovered);
 
 	// Only proceed with time synchronization if it hasn't been set yet
     if (!time_synced) {
@@ -999,39 +1116,57 @@ void print_usage() {
 }
 
 int main(int argc, char *argv[]) {
-
-	 // Load configuration from the config file
     load_config(CONFIG_FILE);
-	// Load profiles from profile file
     load_profiles(PROFILE_FILE);
 
-
-	int sockfd;
+    int sockfd;
     struct sockaddr_in server_addr, client_addr;
     socklen_t client_addr_len = sizeof(client_addr);
     char buffer[BUFFER_SIZE];
     int port = DEFAULT_PORT;
     char ip[INET_ADDRSTRLEN] = DEFAULT_IP; // Default IP
 
+    // Initialize osd_udp_config_t struct
+    osd_udp_config_t osd_config = { .udp_out_sock = -1 };
 
     // Parse command-line arguments
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--port") == 0 && i + 1 < argc) {
             port = atoi(argv[++i]);
-         } else if (strcmp(argv[i], "--ip") == 0 && i + 1 < argc) {
+        } else if (strcmp(argv[i], "--ip") == 0 && i + 1 < argc) {
             strncpy(ip, argv[++i], INET_ADDRSTRLEN);
-		} else if (strcmp(argv[i], "--verbose") == 0) {
+        } else if (strcmp(argv[i], "--verbose") == 0) {
             verbose_mode = true;
         } else if (strcmp(argv[i], "--pace-exec") == 0 && i + 1 < argc) {
             int ms = atoi(argv[++i]);
             pace_exec = ms * 1000L; // Convert milliseconds to microseconds
+
+        } else if (strcmp(argv[i], "--osd2udp") == 0 && i + 1 < argc) {
+            char *ip_port = argv[++i];
+            char *colon_pos = strchr(ip_port, ':');
+            if (colon_pos) {
+                *colon_pos = '\0'; // Split IP and port
+                strncpy(osd_config.udp_out_ip, ip_port, INET_ADDRSTRLEN);
+                osd_config.udp_out_port = atoi(colon_pos + 1);
+            } else {
+                fprintf(stderr, "Invalid format for --osd2udp. Expected <ip:port>\n");
+                return 1;
+            }
+
+            // Create the outgoing UDP socket
+            if ((osd_config.udp_out_sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+                perror("Error creating outgoing UDP socket");
+                return 1;
+            }
+
+            printf("OSD UDP output enabled to %s:%d\n", osd_config.udp_out_ip, osd_config.udp_out_port);
         } else {
             print_usage();
             return 1;
         }
     }
 
-    // Create UDP socket
+    // Create UDP socket for incoming messages
     if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
         perror("Socket creation failed");
         exit(EXIT_FAILURE);
@@ -1050,34 +1185,40 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
+    printf("Listening on UDP port %d, IP: %s...\n", port, ip);
+	
+	//Get fps value from majestic
+	int fps = get_video_fps();
+    if (fps >= 0) {
+        printf("Video FPS: %d\n", fps);
+		global_fps = fps;
+    } else {
+        printf("Failed to retrieve video FPS from majestic.\n");
+    }
 
-	printf("Listening on UDP port %d, IP: %s...\n", port, ip);
+    // Check if roi_focus_mode is enabled and call the setup_roi function
+    if (roi_focus_mode) {
+        if (setup_roi() != 0) {
+            printf("Failed to set up focus mode regions based on majestic resolution. You may have to do it manually.\n");
+        } else {
+            printf("Focus mode regions set in majestic.yaml\n");
+        }
+    }
 
-
-	// Check if roi_focus_mode is enabled and call the setup_roi function
-	if (roi_focus_mode) {
-		if (setup_roi() != 0) {
-			printf("Failed to set up focus mode regions based on majestic resolution. You may have to do it manually.\n");
-		} else {
-			printf("Focus mode regions set in majestic.yaml\n");
-		}
-	}
-
-
-    // Prepare counting thread
-	pthread_t count_thread;
+    // Start the counting thread
+    pthread_t count_thread;
     pthread_create(&count_thread, NULL, count_messages, NULL);
 
-	// Prepare periodic OSD update thread
-	pthread_t osd_thread;
-	pthread_create(&osd_thread, NULL, periodic_update_osd, NULL);
+    // Start the periodic OSD update thread, passing osd_config
+    pthread_t osd_thread;
+    pthread_create(&osd_thread, NULL, periodic_update_osd, &osd_config);
 
-	// Prepare periodic_tx_dropped thread
-	pthread_t tx_dropped_thread;
+    // Start the periodic TX dropped thread
+    pthread_t tx_dropped_thread;
     pthread_create(&tx_dropped_thread, NULL, periodic_tx_dropped, NULL);
 
-
- while (1) {
+    // Main loop for processing incoming messages
+    while (1) {
         // Receive a message
         int n = recvfrom(sockfd, buffer, sizeof(buffer) - 1, 0,
                          (struct sockaddr *)&client_addr, &client_addr_len);
@@ -1086,10 +1227,10 @@ int main(int argc, char *argv[]) {
             break;
         }
 
-		// Increment message count
-			pthread_mutex_lock(&count_mutex);
-			message_count++;
-			pthread_mutex_unlock(&count_mutex);
+        // Increment message count
+        pthread_mutex_lock(&count_mutex);
+        message_count++;
+        pthread_mutex_unlock(&count_mutex);
 
         // Null-terminate the received data
         buffer[n] = '\0';
@@ -1101,22 +1242,28 @@ int main(int argc, char *argv[]) {
 
         // Print the message length and content
         if (verbose_mode) {
-			printf("Received message (%u bytes): %s\n", msg_length, buffer + sizeof(msg_length));
+            printf("Received message (%u bytes): %s\n", msg_length, buffer + sizeof(msg_length));
+        }
 
-		}
-
-		// Strip length off the start of the message
-		char *message = buffer + sizeof(uint32_t);
-		//See if it's special otherwise just process it
-		if (strncmp(message, "special:", 8) == 0) {
-			special_command_message(message);
-		} else {
-			process_message(message);
-		}
-
+        // Strip length off the start of the message
+        char *message = buffer + sizeof(uint32_t);
+        // See if it's a special command, otherwise process it
+        if (strncmp(message, "special:", 8) == 0) {
+            special_command_message(message);
+        } else {
+            process_message(message);
+        }
     }
 
     // Close the socket
     close(sockfd);
+
+    // Close outgoing OSD socket if it was opened
+    if (osd_config.udp_out_sock != -1) {
+        close(osd_config.udp_out_sock);
+    }
+
     return 0;
 }
+
+
