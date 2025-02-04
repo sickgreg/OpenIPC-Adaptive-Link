@@ -55,6 +55,7 @@ int global_fps = 120;
 
 int prevWfbPower = -1;
 float prevSetGop = -1.0;
+int prevBandwidth = -20;
 char prevSetGI[10] = "-1";
 int prevSetMCS = -1;
 int prevSetFecK = -1;
@@ -443,7 +444,7 @@ void apply_profile(Profile* profile) {
 
     char powerCommand[100];
 	char fpsCommand[150];
-    char mcsCommand[100];
+    char mcsCommand[150];
     char bitrateCommand[150];
     char gopCommand[100];
     char fecCommand[100];
@@ -491,9 +492,11 @@ void apply_profile(Profile* profile) {
             execute_command(gopCommand);
             prevSetGop = currentSetGop;
         }
-        if (strcmp(currentSetGI, prevSetGI) != 0 || currentSetMCS != prevSetMCS) {
-            sprintf(mcsCommand, mcsCommandTemplate, currentSetGI, currentSetMCS);
+		
+		if (strcmp(currentSetGI, prevSetGI) != 0 || currentSetMCS != prevSetMCS || currentBandwidth != prevBandwidth) {
+            sprintf(mcsCommand, mcsCommandTemplate, currentBandwidth, currentSetGI, currentSetMCS);
             execute_command(mcsCommand);
+			prevBandwidth = currentBandwidth;
             strcpy(prevSetGI, currentSetGI);
             prevSetMCS = currentSetMCS;
         }
@@ -535,9 +538,10 @@ void apply_profile(Profile* profile) {
             execute_command(gopCommand);
             prevSetGop = currentSetGop;
         }
-        if (strcmp(currentSetGI, prevSetGI) != 0 || currentSetMCS != prevSetMCS) {
-            sprintf(mcsCommand, mcsCommandTemplate, currentSetGI, currentSetMCS);
+        if (strcmp(currentSetGI, prevSetGI) != 0 || currentSetMCS != prevSetMCS || currentBandwidth != prevBandwidth) {
+            sprintf(mcsCommand, mcsCommandTemplate, currentBandwidth, currentSetGI, currentSetMCS);
             execute_command(mcsCommand);
+			prevBandwidth = currentBandwidth;
             strcpy(prevSetGI, currentSetGI);
             prevSetMCS = currentSetMCS;
         }
