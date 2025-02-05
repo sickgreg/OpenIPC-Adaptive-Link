@@ -3,9 +3,9 @@ VERSION_STRING := $(shell date +"%Y%m%d_%H%M%S")
 CFLAGS ?=
 CFLAGS += -Wno-address-of-packed-member -DVERSION_STRING="\"$(VERSION_STRING)\""
 
-TARGET_N :="ALink42n"
-TARGET_P :="ALink42p"
-TARGET_Q :="ALink42q"
+TARGET_N :=ALink42n
+TARGET_P :=ALink42p
+TARGET_Q :=ALink42q
 
 SRCS_N := $(TARGET_N).c
 SRCS_P := $(TARGET_P).c
@@ -21,49 +21,43 @@ clean:
 
 goke:
 	$(eval CFLAGS += -D__GOKE__)
-	$(eval LIB = -ldl -ldnvqe -lgk_api -lhi_mpi -lsecurec -lupvqe -lvoice_engine -ldnvqe)
+	$(eval LIB = -lm)
 	$(BUILD_N)
 	$(BUILD_P)
 	$(BUILD_Q)
 
-hisi:
-	$(eval CFLAGS += -D__GOKE__)
-	$(eval LIB = -ldnvqe -lmpi -lsecurec -lupvqe -lVoiceEngine)
-	$(BUILD_N)
-	$(BUILD_P)
-	$(BUILD_Q)
 
-hi3536:
-	$(eval CFLAGS += -D__GOKE__ -D__HI3536__)
-	$(eval LIB = -lm -ldnvqe -lmpi -ljpeg -lupvqe -lVoiceEngine)
+hi3516:
+	$(eval CFLAGS += -D__HI3516__)
+	$(eval LIB = -lm)
 	$(BUILD_N)
 	$(BUILD_P)
 	$(BUILD_Q)
 
 star6b0:
 	$(eval CFLAGS += -D__SIGMASTAR__ -D__INFINITY6__ -D__INFINITY6B0__)
-	$(eval LIB = -lcam_os_wrapper -lm -lmi_rgn -lmi_sys)
+	$(eval LIB = -lm)
 	$(BUILD_N)
 	$(BUILD_P)
 	$(BUILD_Q)
 
 star6c:
 	$(eval CFLAGS += -D__SIGMASTAR__ -D__INFINITY6__ -D__INFINITY6C__)
-	$(eval LIB = -lcam_os_wrapper -lmi_rgn -lmi_sys)
+	$(eval LIB = -lm)
 	$(BUILD_N)
 	$(BUILD_P)
 	$(BUILD_Q)
 
 star6e:
 	$(eval CFLAGS += -D__SIGMASTAR__ -D__INFINITY6__ -D__INFINITY6E__)
-	$(eval LIB = -lcam_os_wrapper -lm -lmi_rgn -lmi_sys -lmi_venc)
+	$(eval LIB = -lm)
 	$(BUILD_N)
 	$(BUILD_P)
 	$(BUILD_Q)
 
 native:
 	$(eval CFLAGS += -D_x86)
-	$(eval LIB = -lcsfml-graphics -lcsfml-window -lcsfml-system `pkg-config --libs cairo x11` -lm)
+	$(eval LIB = -lm)
 	$(eval BUILD = $(CC) $(SRCS) -L $(DRV) $(CFLAGS) $(LIB) -levent_core -O0 -g -o $(OUTPUT))
 	$(BUILD_N)
 	$(BUILD_P)
