@@ -12,42 +12,59 @@ SRCS_P := $(TARGET_P).c
 SRCS_Q := $(TARGET_Q).c
 
 OUTPUT ?= $(PWD)
-BUILD_N = $(CC) $(SRCS_N) -I $(SDK)/include -I$(TOOLCHAIN)/usr/include -L$(DRV) $(CFLAGS) $(LIB) -levent_core -Os -s -o $(OUTPUT)/$(TARGET_N)
-BUILD_P = $(CC) $(SRCS_P) -I $(SDK)/include -I$(TOOLCHAIN)/usr/include -L$(DRV) $(CFLAGS) $(LIB) -levent_core -Os -s -o $(OUTPUT)/$(TARGET_P)
-BUILD_Q = $(CC) $(SRCS_Q) -I $(SDK)/include -I$(TOOLCHAIN)/usr/include -L$(DRV) $(CFLAGS) $(LIB) -levent_core -Os -s -o $(OUTPUT)/$(TARGET_Q)
+BUILD_N = $(CC) $(SRCS_N) -I$(TOOLCHAIN)/usr/include -L$(DRV) $(CFLAGS) $(LIB) -levent_core -Os -s -o $(OUTPUT)/$(TARGET_N)
+BUILD_P = $(CC) $(SRCS_P) -I$(TOOLCHAIN)/usr/include -L$(DRV) $(CFLAGS) $(LIB) -levent_core -Os -s -o $(OUTPUT)/$(TARGET_P)
+BUILD_Q = $(CC) $(SRCS_Q) -I$(TOOLCHAIN)/usr/include -L$(DRV) $(CFLAGS) $(LIB) -levent_core -Os -s -o $(OUTPUT)/$(TARGET_Q)
 
 clean:
 	rm -f *.o $(TARGET_N) $(TARGET_P) $(TARGET_Q)
 
 goke:
-	$(eval SDK = ./sdk/gk7205v300)
 	$(eval CFLAGS += -D__GOKE__)
-	$(eval LIB = -shared -ldl -ldnvqe -lgk_api -lhi_mpi -lsecurec -lupvqe -lvoice_engine -ldnvqe)
+	$(eval LIB = -ldl -ldnvqe -lgk_api -lhi_mpi -lsecurec -lupvqe -lvoice_engine -ldnvqe)
 	$(BUILD_N)
 	$(BUILD_P)
 	$(BUILD_Q)
 
 hisi:
-	$(eval SDK = ./sdk/hi3516ev300)
 	$(eval CFLAGS += -D__GOKE__)
-	$(eval LIB = -shared -ldnvqe -lmpi -lsecurec -lupvqe -lVoiceEngine)
+	$(eval LIB = -ldnvqe -lmpi -lsecurec -lupvqe -lVoiceEngine)
+	$(BUILD_N)
+	$(BUILD_P)
+	$(BUILD_Q)
+
+hi3536:
+	$(eval CFLAGS += -D__GOKE__ -D__HI3536__)
+	$(eval LIB = -lm -ldnvqe -lmpi -ljpeg -lupvqe -lVoiceEngine)
 	$(BUILD_N)
 	$(BUILD_P)
 	$(BUILD_Q)
 
 star6b0:
-	$(eval SDK = ./sdk/infinity6)
 	$(eval CFLAGS += -D__SIGMASTAR__ -D__INFINITY6__ -D__INFINITY6B0__)
 	$(eval LIB = -lcam_os_wrapper -lm -lmi_rgn -lmi_sys)
 	$(BUILD_N)
 	$(BUILD_P)
 	$(BUILD_Q)
 
+star6c:
+	$(eval CFLAGS += -D__SIGMASTAR__ -D__INFINITY6__ -D__INFINITY6C__)
+	$(eval LIB = -lcam_os_wrapper -lmi_rgn -lmi_sys)
+	$(BUILD_N)
+	$(BUILD_P)
+	$(BUILD_Q)
+
 star6e:
-	$(eval SDK = ./sdk/infinity6)
 	$(eval CFLAGS += -D__SIGMASTAR__ -D__INFINITY6__ -D__INFINITY6E__)
 	$(eval LIB = -lcam_os_wrapper -lm -lmi_rgn -lmi_sys -lmi_venc)
 	$(BUILD_N)
 	$(BUILD_P)
 	$(BUILD_Q)
 
+native:
+	$(eval CFLAGS += -D_x86)
+	$(eval LIB = -lcsfml-graphics -lcsfml-window -lcsfml-system `pkg-config --libs cairo x11` -lm)
+	$(eval BUILD = $(CC) $(SRCS) -L $(DRV) $(CFLAGS) $(LIB) -levent_core -O0 -g -o $(OUTPUT))
+	$(BUILD_N)
+	$(BUILD_P)
+	$(BUILD_Q)
