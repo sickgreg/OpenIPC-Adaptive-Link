@@ -201,6 +201,9 @@ dr_setup() {
 			killall $FILE_NAME 2>/dev/null
 			sed -i '/.*'$FILE_NAME'.*/d' /etc/rc.local
 			rm -f $FILE $TXPROFILE $ALINK
+   		 	
+       			cli -d .video0.qpDelta
+	  
 			echo_green "Adaptive Link removed."
 			;;
 		update)
@@ -212,6 +215,9 @@ dr_setup() {
 			curl -L -o $FILE "$URL_ALINK_DRONE"
 			curl -L -o $TXPROFILE "$URL_TXPROFILE_CONF"
 			curl -L -o $ALINK "$URL_ALINK_CONF"
+			# Set qpDelta
+			cli -s .video0.qpDelta -12
+
 			echo_green "Adaptive Link updated successfully. Restart the drone."
 			;;
 		*)
