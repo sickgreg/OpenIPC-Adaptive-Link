@@ -188,6 +188,9 @@ dr_setup() {
 			curl -L -o $ALINK "$URL_ALINK_CONF"
 			chmod +x $FILE
 
+			# Set qpDelta
+			cli -s .video0.qpDelta -12
+
 			# Add to rc.local
 			sed -i -e '$i \'$FILE' --ip '$UDP_IP' --port '$UDP_PORT' &' /etc/rc.local
 			sed -i 's/tunnel=.*/tunnel=true/' /etc/datalink.conf
