@@ -191,6 +191,10 @@ dr_setup() {
 			# Set qpDelta
 			cli -s .video0.qpDelta -12
 
+   			# Set fpv noiseLevel
+			cli -s .fpv.enabled true
+   			cli -s .fpv.noiseLevel 0
+
 			# Add to rc.local
 			sed -i -e '$i \'$FILE' --ip '$UDP_IP' --port '$UDP_PORT' &' /etc/rc.local
 			sed -i 's/tunnel=.*/tunnel=true/' /etc/datalink.conf
