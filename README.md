@@ -1,7 +1,7 @@
 # OpenIPC-Adaptive-Link
 **Greg's Adaptive-Link - For OpenIPC Camera and Radxa Zero 3w/e or Android PixelPilot Ground Station**
 
-Warning: Select your drone adapter type EU or AU in /etc/alink.conf and leave alone or mindfully set power levels appropriately in /etc/txprofiles.conf.  Default is EU, safe 40 to 45.  AU won't auto-set power until changing /etc/alink.conf (todo have auto card detection)
+Warning: Mindfully set power levels appropriately in /etc/txprofiles.conf.  Default is an attempt at MarioAIO-safe, max 30 (Which is quite low for a lot of cards). 
 
 About the files above. There are some older versions eg 42q etc still there for reference. Current code for latest release is in alink_drone.c (and it's conf files alink.conf and txprofiles.conf) and alink_gs. 
 
@@ -29,16 +29,6 @@ Config files are `/etc/txprofiles.conf` and `/etc/alink.conf`
 3. PixelPilot Android... Still testing early pre-release.  Stay tuned.
 
 4. Auto-install on ground station
-   
-   Note: if you already have a version older than 0.46.0, please remove first:
-
-```
-curl -L -o alink_install.sh https://raw.githubusercontent.com/sickgreg/OpenIPC-Adaptive-Link/refs/heads/main/alink_install.sh
-sudo chmod +x alink_install.sh
-sudo ./alink_install.sh gs remove
-```
-
-Then to install:
 
 ```
 curl -L -o alink_install.sh https://raw.githubusercontent.com/sickgreg/OpenIPC-Adaptive-Link/refs/heads/main/alink_install.sh
