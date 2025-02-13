@@ -20,6 +20,8 @@
 #define MAX_PROFILES 20
 #define DEFAULT_PACE_EXEC_MS 50
 
+#define min(a, b) ((a) < (b) ? (a) : (b))
+
 // Profile struct
 typedef struct {
     int rangeMin;
@@ -33,7 +35,7 @@ typedef struct {
     int wfbPower;
     char ROIqp[20];
 	int bandwidth;
-	int divideFpsBy;
+	int setQpDelta;
 } Profile;
 
 Profile profiles[MAX_PROFILES];
@@ -46,12 +48,18 @@ typedef struct {
 } osd_udp_config_t;
 
 // OSD strings
-char global_regular_osd[64] = "initializing...";
 char global_profile_osd[64] = "initializing...";
-char global_gs_stats_osd[64] = "initializing...";
+char global_regular_osd[64] = "&L%d0&F%d&B &C tx&Wc";
+char global_gs_stats_osd[64] = "waiting for gs.";
 char global_extra_stats_osd[64] = "initializing...";
 
+
+int x_res = 1920;
+int y_res = 1080;
 int global_fps = 120;
+int total_pixels = 2073600;
+int set_osd_font_size = 20;
+int set_osd_colour = 7;
 
 int prevWfbPower = -1;
 float prevSetGop = -1.0;
@@ -63,8 +71,11 @@ int prevSetFecN = -1;
 int prevSetBitrate = -1;
 char prevROIqp[20] = "-1";
 int prevDivideFpsBy = -1;
+int prevFPS = -1;
+int prevQpDelta = -100;
 
 
+int tx_factor = 50;  // Default tx power factor 50 (most cards)
 long pace_exec = DEFAULT_PACE_EXEC_MS * 1000L;
 int currentProfile = -1;
 int previousProfile = -2;
@@ -83,6 +94,8 @@ int baseline_value = 100;
 float smoothing_factor = 0.5;
 float smoothing_factor_down = 0.8;
 float smoothed_combined_value = 1500;
+int max_fec_rec_penalty = 200;
+bool limitFPS = 1;
 
 int applied_penalty = 0;
 struct timespec penalty_timestamp;
@@ -94,7 +107,7 @@ int fallback_ms = 1000;
 bool idr_every_change = false;
 bool roi_focus_mode = false;
 
-char fpsCommandTemplate[150], powerCommandTemplate[100], mcsCommandTemplate[100], bitrateCommandTemplate[150], gopCommandTemplate[100], fecCommandTemplate[100], roiCommandTemplate[150], idrCommandTemplate[100], msposdCommandTemplate[384];
+char fpsCommandTemplate[150], powerCommandTemplate[100], qpDeltaCommandTemplate[150], mcsCommandTemplate[100], bitrateCommandTemplate[150], gopCommandTemplate[100], fecCommandTemplate[100], roiCommandTemplate[150], idrCommandTemplate[100], msposdCommandTemplate[384];
 bool verbose_mode = false;
 bool selection_busy = false;
 int message_count = 0;      // Global variable for message count
@@ -129,6 +142,31 @@ long get_monotonic_time() {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return ts.tv_sec;
+}
+
+int get_resolution() {
+	
+	char resolution[32];
+
+    // Execute system command to get resolution
+    FILE *fp = popen("cli --get .video0.size", "r");
+    if (fp == NULL) {
+        printf("Failed to run get resolution command\n");
+        return 1;
+    }
+
+    // Read the output of the command
+    fgets(resolution, sizeof(resolution) - 1, fp);
+    pclose(fp);
+
+    // Parse the resolution in the format <x_res>x<y_res>
+    if (sscanf(resolution, "%dx%d", &x_res, &y_res) != 2) {
+        printf("Failed to parse resolution\n");
+        return 1;
+    }
+
+	printf("Video Size: %dx%d\n", x_res, y_res);
+
 }
 
 void load_config(const char* filename) {
@@ -186,10 +224,19 @@ void load_config(const char* filename) {
                 fec_rec_penalty = atoi(value);
             } else if (strcmp(key, "apply_penalty_for_s") == 0) {
                 apply_penalty_for_s = atoi(value);
+				
+			} else if (strcmp(key, "allow_spike_fix_fps") == 0) {
+                limitFPS = atoi(value);
+			} else if (strcmp(key, "max_fec_rec_penalty") == 0) {
+                max_fec_rec_penalty = atoi(value);	
+				
+								
             } else if (strcmp(key, "powerCommand") == 0) {
                 strncpy(powerCommandTemplate, value, sizeof(powerCommandTemplate));
 			} else if (strcmp(key, "fpsCommandTemplate") == 0) {
                 strncpy(fpsCommandTemplate, value, sizeof(fpsCommandTemplate));
+			} else if (strcmp(key, "qpDeltaCommand") == 0) {
+                strncpy(qpDeltaCommandTemplate, value, sizeof(qpDeltaCommandTemplate));	
             } else if (strcmp(key, "mcsCommand") == 0) {
                 strncpy(mcsCommandTemplate, value, sizeof(mcsCommandTemplate));
             } else if (strcmp(key, "bitrateCommand") == 0) {
@@ -202,14 +249,12 @@ void load_config(const char* filename) {
                 strncpy(roiCommandTemplate, value, sizeof(roiCommandTemplate));
             } else if (strcmp(key, "idrCommand") == 0) {
                 strncpy(idrCommandTemplate, value, sizeof(idrCommandTemplate));
-
-            } else if (strcmp(key, "msposdMSG") == 0) {
-                strncpy(global_regular_osd, value, sizeof(global_regular_osd));
-
-            } else {
+				
+			}else {
                 fprintf(stderr, "Warning: Unrecognized configuration key: %s\n", key);
 				exit(EXIT_FAILURE);  // Exit the program with an error status
             }
+			
         } else if (strlen(line) > 1 && line[0] != '\n') {  // ignore empty lines
             fprintf(stderr, "Error: Invalid configuration format: %s\n", line);
             exit(EXIT_FAILURE);
@@ -251,7 +296,7 @@ void load_profiles(const char* filename) {
                    &profiles[i].rangeMin, &profiles[i].rangeMax, profiles[i].setGI,
                    &profiles[i].setMCS, &profiles[i].setFecK, &profiles[i].setFecN,
                    &profiles[i].setBitrate, &profiles[i].setGop, &profiles[i].wfbPower,
-                   profiles[i].ROIqp, &profiles[i].bandwidth, &profiles[i].divideFpsBy) == 12) {
+                   profiles[i].ROIqp, &profiles[i].bandwidth, &profiles[i].setQpDelta) == 12) {
             i++;
         } else {
             fprintf(stderr, "Malformed line ignored: %s\n", line);
@@ -261,6 +306,34 @@ void load_profiles(const char* filename) {
     fclose(file);
 }
 
+int check_module_loaded(const char *module_name) {
+    FILE *fp = fopen("/proc/modules", "r");
+    if (!fp) {
+        perror("Failed to open /proc/modules");
+        return 0;
+    }
+
+    char line[256];
+    while (fgets(line, sizeof(line), fp)) {
+        if (strncmp(line, module_name, strlen(module_name)) == 0) {
+            fclose(fp);
+            return 1; // Found the module
+        }
+    }
+
+    fclose(fp);
+    return 0; // Not found
+}
+
+void determine_tx_power_equation() {
+    if (check_module_loaded("88XXau")) {
+        tx_factor = -100;
+		printf("Found 88XXau card, therefor...\n");
+    } else {
+        tx_factor = 50;
+		printf("Did not find 88XXau, therefor...\n");
+    }
+}
 
 // Function to read fps from majestic.yaml
 int get_video_fps() {
@@ -290,28 +363,10 @@ int get_video_fps() {
 
 // Function to setup roi in majestic.yaml based on resolution
 int setup_roi() {
+    
+    FILE *fp;  // Declare the FILE pointer before using it
 
-    // Variables for resolution
-    int x_res, y_res;
-    char resolution[32];
-
-    // Execute system command to get resolution and store it in a file
-    FILE *fp = popen("cli --get .video0.size", "r");
-    if (fp == NULL) {
-        printf("Failed to run command\n");
-        return 1;
-    }
-
-    // Read the output of the command
-    fgets(resolution, sizeof(resolution) - 1, fp);
-    pclose(fp);
-
-    // Parse the resolution in the format <x_res>x<y_res>
-    if (sscanf(resolution, "%dx%d", &x_res, &y_res) != 2) {
-        printf("Failed to parse resolution\n");
-        return 1;
-    }
-
+	
     // Round x_res and y_res to nearest multiples of 32
     int rounded_x_res = floor(x_res / 32) * 32;
     int rounded_y_res = floor(y_res / 32) * 32;
@@ -444,14 +499,13 @@ void apply_profile(Profile* profile) {
 
     char powerCommand[100];
 	char fpsCommand[150];
-    char mcsCommand[150];
+    char qpDeltaCommand[150];
+	char mcsCommand[150];
     char bitrateCommand[150];
     char gopCommand[100];
     char fecCommand[100];
     char roiCommand[150];
     const char *idrCommand;
-    //char msposdCommand[512];
-
     idrCommand = idrCommandTemplate;
 
 	// Calculate seconds since last change
@@ -471,19 +525,38 @@ void apply_profile(Profile* profile) {
     char currentROIqp[20];
     strcpy(currentROIqp, profile->ROIqp);
 	int currentBandwidth = profile->bandwidth;
-    int currentDivideFpsBy = profile->divideFpsBy;
+    int currentQpDelta = profile->setQpDelta;
+	
+	int currentDivideFpsBy = 1;
+	int currentFPS = global_fps;
+	
+	// Logic to calculate any FPS limit
+	if (limitFPS && currentSetBitrate < 4000 && global_fps > 30 && total_pixels > 1300000) {
+		currentFPS = 30;
+		currentDivideFpsBy = round((double)global_fps / 30);
+	} else if (limitFPS && currentSetBitrate < 8000 && total_pixels > 1300000 && global_fps > 60) {
+		currentFPS = 60;
+		currentDivideFpsBy = round((double)global_fps / 60);
 
+	}
+	
     // Logic to determine execution order and see if values are different
     if (currentProfile > previousProfile) {
-
-		if (currentDivideFpsBy != prevDivideFpsBy) {
-            sprintf(fpsCommand, fpsCommandTemplate, global_fps / currentDivideFpsBy);
+		
+		
+		if (currentQpDelta != prevQpDelta) {
+			sprintf (qpDeltaCommand, qpDeltaCommandTemplate, currentQpDelta);
+			execute_command(qpDeltaCommand);
+			prevQpDelta = currentQpDelta;
+		}
+		if (currentFPS != prevFPS) {
+			sprintf(fpsCommand, fpsCommandTemplate, currentFPS);
             execute_command(fpsCommand);
-            prevDivideFpsBy = currentDivideFpsBy;
+			prevFPS = currentFPS;
 		}
 
         if (currentWfbPower != prevWfbPower) {
-            sprintf(powerCommand, powerCommandTemplate, currentWfbPower * 50);
+            sprintf(powerCommand, powerCommandTemplate, currentWfbPower * tx_factor);
             execute_command(powerCommand);
             prevWfbPower = currentWfbPower;
         }
@@ -522,10 +595,16 @@ void apply_profile(Profile* profile) {
 
     } else {
 
-		if (currentDivideFpsBy != prevDivideFpsBy) {
-            sprintf(fpsCommand, fpsCommandTemplate, global_fps / currentDivideFpsBy);
+		if (currentQpDelta != prevQpDelta) {
+			sprintf (qpDeltaCommand, qpDeltaCommandTemplate, currentQpDelta);
+			execute_command(qpDeltaCommand);
+			prevQpDelta = currentQpDelta;
+		}
+		
+		if (currentFPS != prevFPS) {
+			sprintf(fpsCommand, fpsCommandTemplate, currentFPS);
             execute_command(fpsCommand);
-            prevDivideFpsBy = currentDivideFpsBy;
+			prevFPS = currentFPS;
 		}
 
         if (currentSetBitrate != prevSetBitrate) {
@@ -552,7 +631,7 @@ void apply_profile(Profile* profile) {
             prevSetFecN = currentSetFecN;
         }
         if (currentWfbPower != prevWfbPower) {
-            sprintf(powerCommand, powerCommandTemplate, currentWfbPower * 50);
+            sprintf(powerCommand, powerCommandTemplate, currentWfbPower * tx_factor);
             execute_command(powerCommand);
             prevWfbPower = currentWfbPower;
         }
@@ -568,9 +647,10 @@ void apply_profile(Profile* profile) {
     }
 
 	// Generate string with profile stats for osd
-	sprintf(global_profile_osd, "%lds %d %s%d %d/%d Pw%d g%.1f", 
+	sprintf(global_profile_osd, "%lds %d %d%s%d %d/%d Pw%d g%.1f", 
         timeElapsed, 
         profile->setBitrate, 
+		profile->bandwidth,
         profile->setGI, 
         profile->setMCS, 
         profile->setFecK,
@@ -602,12 +682,21 @@ void *periodic_update_osd(void *arg) {
                  applied_penalty,
 				 global_total_tx_dropped,
 				 total_keyframe_requests);
+		
+		// Check if profile is low and set red, lowish and set yellow, otherwise set green
+		set_osd_colour = (previousProfile < 1) ? 2 : (previousProfile < 2) ? 5 : 3;
+	
+		
+		// Insert osd font colour and size in regular string
+		char local_regular_osd[64];
+		snprintf(local_regular_osd, sizeof(local_regular_osd), global_regular_osd, set_osd_colour, set_osd_font_size);
 
-        // Combine all the strings: profile stats + regular msposd string + gs stats + extra stats
+		
+		// Combine all the strings: profile stats + regular msposd string + gs stats + extra stats
         char full_osd_string[256];
         snprintf(full_osd_string, sizeof(full_osd_string), "%s %s %s %s",
-                 global_profile_osd, global_regular_osd, global_gs_stats_osd, global_extra_stats_osd);
-        
+                 global_profile_osd, local_regular_osd, global_gs_stats_osd, global_extra_stats_osd);
+        		
 		// Either update OSD remotely over udp, or update local file
 		if (osd_config->udp_out_sock != -1) {
             // Send the OSD string over UDP
@@ -706,6 +795,8 @@ void start_selection(int rssi_score, int snr_score, int recovered) {
 	// Check for any penalties
 	if (recovered >= fec_rec_alarm && (fec_rec_penalty * recovered) > applied_penalty) {
 		applied_penalty = fec_rec_penalty * recovered;
+		//limit to max penalty using min macro up top
+		applied_penalty = min(applied_penalty, max_fec_rec_penalty);
 		penalty_timestamp = current_time;
 		if (verbose_mode) {
 			puts("fec_rec penalty condition met...");
@@ -1191,6 +1282,23 @@ int main(int argc, char *argv[]) {
 
     printf("Listening on UDP port %d, IP: %s...\n", port, ip);
 	
+	determine_tx_power_equation();
+    printf("TX Power Factor: %d\n", tx_factor);
+	
+	// Get resolution
+	if (get_resolution() != 0) {
+					printf("Failed to get resolution. Assuming 1920x1080\n");
+					x_res = 1920;
+					y_res = 1080;
+	}
+	
+	total_pixels = x_res * y_res;
+
+	set_osd_font_size = (x_res < 1280) ? 20 :
+						(x_res < 1700) ? 25 :
+						(x_res < 2000) ? 35 :
+						(x_res < 2560) ? 45 : 50;
+	
 	//Get fps value from majestic
 	int fps = get_video_fps();
     if (fps >= 0) {
@@ -1199,7 +1307,8 @@ int main(int argc, char *argv[]) {
     } else {
         printf("Failed to retrieve video FPS from majestic.\n");
     }
-
+			
+	
     // Check if roi_focus_mode is enabled and call the setup_roi function
     if (roi_focus_mode) {
         if (setup_roi() != 0) {
