@@ -80,6 +80,7 @@ long pace_exec = DEFAULT_PACE_EXEC_MS * 1000L;
 int currentProfile = -1;
 int previousProfile = -2;
 long prevTimeStamp = 0;
+bool allow_set_power = 1;
 float rssi_weight = 0.5;
 float snr_weight = 0.5;
 int hold_fallback_mode_s = 2;
@@ -188,7 +189,10 @@ void load_config(const char* filename) {
         char *value = strtok(NULL, "\n");
 
         if (key && value) {
-            if (strcmp(key, "rssi_weight") == 0) {
+		
+			if (strcmp(key, "allow_set_power") == 0) {
+                allow_set_power = atoi(value);
+            } else if (strcmp(key, "rssi_weight") == 0) {
                 rssi_weight = atof(value);
             } else if (strcmp(key, "snr_weight") == 0) {
                 snr_weight = atof(value);
@@ -457,7 +461,39 @@ int setup_roi() {
     return 0;
 }
 
-
+void read_wfb_tx_cmd_output(int *k, int *n, int *stbc, int *ldpc, int *short_gi, int *actual_bandwidth, int *mcs_index, int *vht_mode, int *vht_nss) {
+    char buffer[256];
+    FILE *fp;
+    
+    // Run first command
+    fp = popen("wfb_tx_cmd 8000 get_fec", "r");
+    if (fp == NULL) {
+        perror("Failed to run wfb_tx_cmd command");
+        return;
+    }
+    while (fgets(buffer, sizeof(buffer), fp) != NULL) {
+        if (sscanf(buffer, "k=%d", k) == 1) continue;
+        if (sscanf(buffer, "n=%d", n) == 1) continue;
+    }
+    pclose(fp);
+    
+    // Run second command
+    fp = popen("wfb_tx_cmd 8000 get_radio", "r");
+    if (fp == NULL) {
+        perror("Failed to run command");
+        return;
+    }
+    while (fgets(buffer, sizeof(buffer), fp) != NULL) {
+        if (sscanf(buffer, "stbc=%d", stbc) == 1) continue;
+        if (sscanf(buffer, "ldpc=%d", ldpc) == 1) continue;
+        if (sscanf(buffer, "short_gi=%d", short_gi) == 1) continue;
+        if (sscanf(buffer, "bandwidth=%d", actual_bandwidth) == 1) continue;
+        if (sscanf(buffer, "mcs_index=%d", mcs_index) == 1) continue;
+        if (sscanf(buffer, "vht_mode=%d", vht_mode) == 1) continue;
+        if (sscanf(buffer, "vht_nss=%d", vht_nss) == 1) continue;
+    }
+    pclose(fp);
+}
 
 
 // Get the profile based on input value
@@ -555,7 +591,7 @@ void apply_profile(Profile* profile) {
 			prevFPS = currentFPS;
 		}
 
-        if (currentWfbPower != prevWfbPower) {
+        if (allow_set_power && currentWfbPower != prevWfbPower) {
             sprintf(powerCommand, powerCommandTemplate, currentWfbPower * tx_factor);
             execute_command(powerCommand);
             prevWfbPower = currentWfbPower;
@@ -630,7 +666,7 @@ void apply_profile(Profile* profile) {
             prevSetFecK = currentSetFecK;
             prevSetFecN = currentSetFecN;
         }
-        if (currentWfbPower != prevWfbPower) {
+        if (allow_set_power && currentWfbPower != prevWfbPower) {
             sprintf(powerCommand, powerCommandTemplate, currentWfbPower * tx_factor);
             execute_command(powerCommand);
             prevWfbPower = currentWfbPower;
@@ -646,16 +682,24 @@ void apply_profile(Profile* profile) {
 		}
     }
 
-	// Generate string with profile stats for osd
+
+	// get actual values from wfb_tx_cmd for OSD
+	int k, n, stbc, ldpc, short_gi, actual_bandwidth, mcs_index, vht_mode, vht_nss;
+    read_wfb_tx_cmd_output(&k, &n, &stbc, &ldpc, &short_gi, &actual_bandwidth, &mcs_index, &vht_mode, &vht_nss);
+	const char *gi_string = short_gi ? "short" : "long";
+	//make Pw 0 if disabled or get from profile
+	int pwr = allow_set_power ? profile->wfbPower : 0;
+
+	// Generate string with profile stats for osd (now including above real stats)
 	sprintf(global_profile_osd, "%lds %d %d%s%d %d/%d Pw%d g%.1f", 
         timeElapsed, 
         profile->setBitrate, 
-		profile->bandwidth,
-        profile->setGI, 
-        profile->setMCS, 
-        profile->setFecK,
-        profile->setFecN, 
-        profile->wfbPower, 
+		actual_bandwidth,
+		gi_string,
+		mcs_index,
+		k,
+		n,
+		pwr,
         profile->setGop);
 }
 
