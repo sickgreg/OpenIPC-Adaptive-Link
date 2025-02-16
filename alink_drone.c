@@ -11,6 +11,7 @@
 #include <sys/wait.h>           // For waitpid
 #include <time.h>               // For timespec, clock_gettime
 #include <math.h>
+#include <ctype.h>
 
 #define BUFFER_SIZE 1024
 #define DEFAULT_PORT 9999
@@ -128,6 +129,26 @@ int total_keyframe_requests = 0;
 long global_total_tx_dropped = 0;
 
 
+void error_to_osd(const char *message) {
+    const char *prefix = "&L50&F30 ";
+    char full_message[128];
+
+    snprintf(full_message, sizeof(full_message), "%s%s", prefix, message);
+
+    FILE *file = fopen("/tmp/MSPOSD.msg", "w");
+    if (file == NULL) {
+        perror("Error opening /tmp/MSPOSD.msg");
+        return;
+    }
+
+    if (fwrite(full_message, sizeof(char), strlen(full_message), file) != strlen(full_message)) {
+        perror("Error writing to /tmp/MSPOSD.msg");
+    }
+
+    fclose(file);
+}
+
+
 // Struct to store each keyframe request code and its timestamp
 typedef struct {
     char code[CODE_LENGTH];
@@ -175,6 +196,7 @@ void load_config(const char* filename) {
     if (!file) {
         fprintf(stderr, "Error: Could not open configuration file: %s\n", filename);
         perror("");
+		error_to_osd("Adaptive-Link: Check /etc/alink.conf");
         exit(EXIT_FAILURE);
     }
 
@@ -253,14 +275,19 @@ void load_config(const char* filename) {
                 strncpy(roiCommandTemplate, value, sizeof(roiCommandTemplate));
             } else if (strcmp(key, "idrCommand") == 0) {
                 strncpy(idrCommandTemplate, value, sizeof(idrCommandTemplate));
+			} else if (strcmp(key, "customOSD") == 0) {
+                strncpy(global_regular_osd, value, sizeof(global_regular_osd));	
+			
 				
 			}else {
                 fprintf(stderr, "Warning: Unrecognized configuration key: %s\n", key);
+				error_to_osd("Adaptive-Link: Check /etc/alink.conf");
 				exit(EXIT_FAILURE);  // Exit the program with an error status
             }
 			
         } else if (strlen(line) > 1 && line[0] != '\n') {  // ignore empty lines
             fprintf(stderr, "Error: Invalid configuration format: %s\n", line);
+			error_to_osd("Adaptive-Link: Check /etc/alink.conf");
             exit(EXIT_FAILURE);
         }
     }
@@ -269,11 +296,49 @@ void load_config(const char* filename) {
 }
 
 
+void trim_whitespace(char *str) {
+    char *end;
+    
+    // Trim leading spaces
+    while (isspace((unsigned char)*str)) str++;
+
+    if (*str == 0) return; // Empty string
+
+    // Trim trailing spaces
+    end = str + strlen(str) - 1;
+    while (end > str && isspace((unsigned char)*end)) end--;
+    
+    // Null-terminate the trimmed string
+    *(end + 1) = '\0';
+}
+
+void normalize_whitespace(char *str) {
+    char *src = str, *dst = str;
+    int in_space = 0;
+
+    while (*src) {
+        if (isspace((unsigned char)*src)) {
+            if (!in_space) {
+                *dst++ = ' ';  // Replace any whitespace sequence with a single space
+                in_space = 1;
+            }
+        } else {
+            *dst++ = *src;
+            in_space = 0;
+        }
+        src++;
+    }
+    *dst = '\0';  // Null-terminate the cleaned string
+}
+
 void load_profiles(const char* filename) {
     FILE *file = fopen(filename, "r");
     if (!file) {
         fprintf(stderr, "Problem loading %s: ", filename);
-        perror(""); // Print system error message
+		error_to_osd("Adaptive-Link: Check /etc/txprofiles.conf");
+
+		
+        perror("");
         exit(1);
     }
 
@@ -281,22 +346,19 @@ void load_profiles(const char* filename) {
     int i = 0;
 
     while (fgets(line, sizeof(line), file) && i < MAX_PROFILES) {
-        // Skip comments
+        // Remove comments
         char *comment = strchr(line, '#');
-        if (comment) {
-            *comment = '\0'; // Truncate the line at the comment
-        }
+        if (comment) *comment = '\0';
 
-        // Trim trailing whitespace and newlines
-        line[strcspn(line, "\r\n")] = '\0';
+        // Trim and normalize spaces
+        trim_whitespace(line);
+        normalize_whitespace(line);
 
-        // Skip empty or whitespace-only lines
-        if (strlen(line) == 0) {
-            continue;
-        }
+        // Skip empty lines
+        if (*line == '\0') continue;
 
-        // Parse the line
-        if (sscanf(line, "%d - %d %s %d %d %d %d %f %d %s %d %d",
+        // Parse the cleaned line
+        if (sscanf(line, "%d - %d %15s %d %d %d %d %f %d %15s %d %d",
                    &profiles[i].rangeMin, &profiles[i].rangeMax, profiles[i].setGI,
                    &profiles[i].setMCS, &profiles[i].setFecK, &profiles[i].setFecN,
                    &profiles[i].setBitrate, &profiles[i].setGop, &profiles[i].wfbPower,
@@ -304,6 +366,7 @@ void load_profiles(const char* filename) {
             i++;
         } else {
             fprintf(stderr, "Malformed line ignored: %s\n", line);
+						
         }
     }
 
@@ -480,7 +543,7 @@ void read_wfb_tx_cmd_output(int *k, int *n, int *stbc, int *ldpc, int *short_gi,
     // Run second command
     fp = popen("wfb_tx_cmd 8000 get_radio", "r");
     if (fp == NULL) {
-        perror("Failed to run command");
+        perror("Failed to run wfb_tx_cmd command");
         return;
     }
     while (fgets(buffer, sizeof(buffer), fp) != NULL) {
@@ -687,7 +750,7 @@ void apply_profile(Profile* profile) {
 	int k, n, stbc, ldpc, short_gi, actual_bandwidth, mcs_index, vht_mode, vht_nss;
     read_wfb_tx_cmd_output(&k, &n, &stbc, &ldpc, &short_gi, &actual_bandwidth, &mcs_index, &vht_mode, &vht_nss);
 	const char *gi_string = short_gi ? "short" : "long";
-	//make Pw 0 if disabled or get from profile
+	//make Pw 0 if disabled else get from profile
 	int pwr = allow_set_power ? profile->wfbPower : 0;
 
 	// Generate string with profile stats for osd (now including above real stats)
@@ -727,7 +790,7 @@ void *periodic_update_osd(void *arg) {
 				 global_total_tx_dropped,
 				 total_keyframe_requests);
 		
-		// Check if profile is low and set red, lowish and set yellow, otherwise set green
+		// Check if profile is low and set red, or yellow. Otherwise set green
 		set_osd_colour = (previousProfile < 1) ? 2 : (previousProfile < 2) ? 5 : 3;
 	
 		
@@ -1254,6 +1317,9 @@ void print_usage() {
     printf("  --pace-exec  Maj/wfb control execution pacing interval in milliseconds (default: %d ms)\n", DEFAULT_PACE_EXEC_MS);
 }
 
+
+
+
 int main(int argc, char *argv[]) {
     load_config(CONFIG_FILE);
     load_profiles(PROFILE_FILE);
@@ -1307,7 +1373,8 @@ int main(int argc, char *argv[]) {
 
     // Create UDP socket for incoming messages
     if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
-        perror("Socket creation failed");
+        perror("Socket creation failed. TX connected? Make sure video and tunnel are working");
+		error_to_osd("Adaptive-Link:  Check wfb tunnel functionality");
         exit(EXIT_FAILURE);
     }
 
@@ -1320,6 +1387,7 @@ int main(int argc, char *argv[]) {
     // Bind the socket
     if (bind(sockfd, (const struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
         perror("Bind failed");
+		error_to_osd("Adaptive-Link:  Check wfb tunnel functionality");
         close(sockfd);
         exit(EXIT_FAILURE);
     }
