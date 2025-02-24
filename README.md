@@ -1,12 +1,72 @@
 # OpenIPC-Adaptive-Link
-**Greg's Adaptive-Link - For OpenIPC Camera and Radxa Zero 3w/e or Android PixelPilot Ground Station**
+## Greg's Adaptive-Link - For OpenIPC Camera and Radxa Zero 3w/e or Android PixelPilot Ground Station
 
 Warning: Mindfully set power levels appropriately in /etc/txprofiles.conf.  Default is an attempt at MarioAIO-safe, max 30 (Which is quite low for a lot of cards). 
 
 About the files above. There are some older versions eg 42q etc still there for reference. Current code for latest release is in alink_drone.c (and it's conf files alink.conf and txprofiles.conf) and alink_gs. 
 
+## How Adaptive-Link works
 
-**Installation**
+Any wireless link can handle higher data-rates over short distances with strong signal than long distances and weak signal conditions.  OpenIPC on it's own lets us choose a single link-speed and a single video bitrate that we think can fit in said link.  Default at the time of writing is 4mbps video bitrate over a 20Mhz channel @ MCS1 long gi with 8/12 forward error correction.  Without needing to understand all those parameters, we can simply summarize them as "a medium to long range link speed with low quality video" profile.  A compromise of both range and image quality.  This is great if you don't need to fly really far away or don't want to fly really close with nice looking high bitrates.  For ease of operation... consider leaving it on default and fly!  Have fun.
+
+Adaptive-Link is a (relatively) simple link profile selector.  We define a set of profiles; from longest range/worst quality, medium range/medium quality to short range/high quality link and video settings and alink continually selects one based on received signal quality at the ground station.  So ideally, if alink is tuned correctly, strong signal will initiate selection of highest quality video and weak signal will initiate selection of longest range and whatever we define in between.
+
+alink_gs (on ground station) monitors RSSI and SNR and generates link quality scores.  Link scores are sent to drone and alink_drone chooses a profile based on the link scores.  If tuned correctly, high score = high quality, medium score = medium quality, low score = low quality.  Scores are values from 1000 to 2000.
+
+The most fundamental settings are in /config/alink_gs.conf on ground station and /etc/alink.conf on drone.  The all important profiles are defined in /etc/txprofiles.conf on drone.
+
+We need to define what is a good/bad score:
+
+In /config/alink_gs.conf we find min and max ranges
+For example if we set:
+
+(1000) rssi_min = -80
+
+(2000) rssi_max = -40
+
+
+(1000) snr_min = 12
+
+(2000) snr_max = 36
+
+
+As an example, with these ranges, if we have ground station rx stats of:
+
+rssi = -60, the normalized rssi_score will be 1500
+snr = 20, the normalized snr_score will be 1333
+
+These scores are calculated and sent from ground station to drone every 100ms (by default).  when alink_drone receives one of these messages it will consider if it needs to change txprofile or not.  There must be, and is, contraints so we don't get continuous unnessesary link changes.  A lot of options are in /etc/alink.conf regarding these contraints.
+
+If we have our rssi/snr weights set to 0.5 and 0.5 the scores in the example above will each contribute equally and the overall score considered will be 1416.  alink will, based on the other constraints, effectively choose the profile whose range 1416 falls into.
+
+example /etc/txprofiles.conf (from alink v0.56.0)
+
+```
+# <ra - nge> <gi> <mcs> <fecK> <fecN> <bitrate> <gop> <Pwr> <roiQP> <bandwidth> <qpDelta>
+999 - 999 long 0 8 12 1999 10 30 0,0,0,0 20 -12
+1000 - 1050 long 0 8 12 2000 10 30 0,0,0,0 20 -12
+1051 - 1500 long 1 8 12 4000 10 25 0,0,0,0 20 -12
+1501 - 1950 long 2 8 12 8000 10 20 12,6,6,12 20 -12
+1951 - 2001 short 2 8 12 9000 10 20 12,6,6,12 20 -12
+```
+
+
+In our example above of total score of 1416, so long as alink_drone considers it appropriate to do so based on contraints, it will select the < 1051 - 1500 > profile.
+
+
+MCS 1, long guard interval, 8/12 fec, 25 power, 20MHz bandwidth link settings will be applied.
+
+
+bitrate 4000kbps, gopSize 10, 0,0,0,0 focus mode qP definition and qpDelta of -12 video settings will be applied.
+
+
+Adaptive-Link is only as good as the information we give it.  Garbage in, garbage out.  It is important to have it tuned for our specific setup.
+
+
+If folks cannot achieve 10mbps with their setup, then having alink select 20mbps is not going to work.
+
+
+## Installation
 
 
 1. A recent OpenIPC firmware for Sigmastar including wfb tunnel is required. It is recommended to upgrade camera to latest OpenIPC (Warning: All files will be overwritten)
