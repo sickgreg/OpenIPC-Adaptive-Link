@@ -53,6 +53,11 @@ char global_profile_osd[64] = "initializing...";
 char global_regular_osd[64] = "&L%d0&F%d&B &C tx&Wc";
 char global_gs_stats_osd[64] = "waiting for gs.";
 char global_extra_stats_osd[64] = "initializing...";
+char global_score_related_osd[64] = "initializing...";
+
+// 0 no custom OSD
+// 4 all
+int osd_level = 4;
 
 
 int x_res = 1920;
@@ -77,6 +82,8 @@ int prevQpDelta = -100;
 
 
 int tx_factor = 50;  // Default tx power factor 50 (most cards)
+int ldpc_tx = 1;
+int stbc = 1;
 long pace_exec = DEFAULT_PACE_EXEC_MS * 1000L;
 int currentProfile = -1;
 int previousProfile = -2;
@@ -98,6 +105,7 @@ float smoothing_factor_down = 0.8;
 float smoothed_combined_value = 1500;
 int max_fec_rec_penalty = 200;
 bool limitFPS = 1;
+bool get_card_info_from_yaml = false;
 
 int applied_penalty = 0;
 struct timespec penalty_timestamp;
@@ -112,6 +120,7 @@ bool roi_focus_mode = false;
 char fpsCommandTemplate[150], powerCommandTemplate[100], qpDeltaCommandTemplate[150], mcsCommandTemplate[100], bitrateCommandTemplate[150], gopCommandTemplate[100], fecCommandTemplate[100], roiCommandTemplate[150], idrCommandTemplate[100], msposdCommandTemplate[384];
 bool verbose_mode = false;
 bool selection_busy = false;
+bool initialized_by_first_message = false;
 int message_count = 0;      // Global variable for message count
 bool paused = false;        // Global variable for pause state
 bool time_synced = false;   // Global flag to indicate if time has been synced
@@ -126,6 +135,7 @@ pthread_mutex_t pause_mutex = PTHREAD_MUTEX_INITIALIZER;  // Mutex for pause sta
 #define EXPIRY_TIME_MS 1000 // Code expiry time in milliseconds
 
 int total_keyframe_requests = 0;
+int total_keyframe_requests_xtx = 0;
 long global_total_tx_dropped = 0;
 
 
@@ -256,7 +266,9 @@ void load_config(const char* filename) {
 			} else if (strcmp(key, "max_fec_rec_penalty") == 0) {
                 max_fec_rec_penalty = atoi(value);	
 				
-								
+			} else if (strcmp(key, "osd_level") == 0) {
+                osd_level = atoi(value);	
+											
             } else if (strcmp(key, "powerCommand") == 0) {
                 strncpy(powerCommandTemplate, value, sizeof(powerCommandTemplate));
 			} else if (strcmp(key, "fpsCommandTemplate") == 0) {
@@ -390,6 +402,36 @@ int check_module_loaded(const char *module_name) {
 
     fclose(fp);
     return 0; // Not found
+}
+
+void load_from_vtx_info_yaml() {
+    char command1[] = "yaml-cli -i /etc/wfb.yaml -g .broadcast.ldpc_tx";
+    char command2[] = "yaml-cli -i /etc/wfb.yaml -g .broadcast.stbc";
+    
+    char buffer[128]; // Buffer to store command output
+    FILE *pipe;
+    
+    // Retrieve ldpc_tx value
+    pipe = popen(command1, "r");
+    if (pipe == NULL) {
+        fprintf(stderr, "Failed to run yaml reader for ldpc_tx\n");
+        return;
+    }
+    if (fgets(buffer, sizeof(buffer), pipe) != NULL) {
+        ldpc_tx = atoi(buffer);
+    }
+    pclose(pipe);
+
+    // Retrieve stbc value
+    pipe = popen(command2, "r");
+    if (pipe == NULL) {
+        fprintf(stderr, "Failed to run yaml reader for stbc\n");
+        return;
+    }
+    if (fgets(buffer, sizeof(buffer), pipe) != NULL) {
+        stbc = atoi(buffer);
+    }
+    pclose(pipe);
 }
 
 void determine_tx_power_equation() {
@@ -666,7 +708,7 @@ void apply_profile(Profile* profile) {
         }
 		
 		if (strcmp(currentSetGI, prevSetGI) != 0 || currentSetMCS != prevSetMCS || currentBandwidth != prevBandwidth) {
-            sprintf(mcsCommand, mcsCommandTemplate, currentBandwidth, currentSetGI, currentSetMCS);
+            sprintf(mcsCommand, mcsCommandTemplate, currentBandwidth, currentSetGI, stbc, ldpc_tx, currentSetMCS);
             execute_command(mcsCommand);
 			prevBandwidth = currentBandwidth;
             strcpy(prevSetGI, currentSetGI);
@@ -717,7 +759,7 @@ void apply_profile(Profile* profile) {
             prevSetGop = currentSetGop;
         }
         if (strcmp(currentSetGI, prevSetGI) != 0 || currentSetMCS != prevSetMCS || currentBandwidth != prevBandwidth) {
-            sprintf(mcsCommand, mcsCommandTemplate, currentBandwidth, currentSetGI, currentSetMCS);
+            sprintf(mcsCommand, mcsCommandTemplate, currentBandwidth, currentSetGI, stbc, ldpc_tx, currentSetMCS);
             execute_command(mcsCommand);
 			prevBandwidth = currentBandwidth;
             strcpy(prevSetGI, currentSetGI);
@@ -785,9 +827,10 @@ void *periodic_update_osd(void *arg) {
         sleep(1);
 
         // Generate string with extra OSD stats to combine with other strings
-        snprintf(global_extra_stats_osd, sizeof(global_extra_stats_osd), "pnlt%d xtx%ld idr%d",
+        snprintf(global_extra_stats_osd, sizeof(global_extra_stats_osd), "pnlt%d xtx%ld(%d) idr%d",
                  applied_penalty,
 				 global_total_tx_dropped,
+				 total_keyframe_requests_xtx,
 				 total_keyframe_requests);
 		
 		// Check if profile is low and set red, or yellow. Otherwise set green
@@ -798,39 +841,58 @@ void *periodic_update_osd(void *arg) {
 		char local_regular_osd[64];
 		snprintf(local_regular_osd, sizeof(local_regular_osd), global_regular_osd, set_osd_colour, set_osd_font_size);
 
+		char full_osd_string[384];
 		
-		// Combine all the strings: profile stats + regular msposd string + gs stats + extra stats
-        char full_osd_string[256];
-        snprintf(full_osd_string, sizeof(full_osd_string), "%s %s %s %s",
-                 global_profile_osd, local_regular_osd, global_gs_stats_osd, global_extra_stats_osd);
-        		
-		// Either update OSD remotely over udp, or update local file
-		if (osd_config->udp_out_sock != -1) {
-            // Send the OSD string over UDP
-            ssize_t sent_bytes = sendto(osd_config->udp_out_sock, full_osd_string, strlen(full_osd_string), 0,
+		// Combine all osd strings, decide, based on osd_level what to display
+		if (osd_level >= 4) { // everything, over multiple lines
+			snprintf(full_osd_string, sizeof(full_osd_string), "%s\n%s\n%s\n%s %s",
+					global_profile_osd, local_regular_osd, global_score_related_osd, global_gs_stats_osd, global_extra_stats_osd);
+        } else if (osd_level == 3) { // medium extras
+			snprintf(full_osd_string, sizeof(full_osd_string), "%s %s\n%s",
+					global_profile_osd, local_regular_osd, global_gs_stats_osd);	
+			
+		} else if (osd_level == 2) { // minimal extras
+			snprintf(full_osd_string, sizeof(full_osd_string), "%s %s",
+					global_profile_osd, local_regular_osd);	
+			
+		} else if (osd_level == 1){ // only basic regular string
+			snprintf(full_osd_string, sizeof(full_osd_string), "%s",
+					local_regular_osd);	
+			
+		}	
+		if (osd_level != 0) { // only if enabled
+			// Either update OSD remotely over udp, or update local file
+			if (osd_config->udp_out_sock != -1) {
+				// Send the OSD string over UDP
+				ssize_t sent_bytes = sendto(osd_config->udp_out_sock, full_osd_string, strlen(full_osd_string), 0,
                                         (struct sockaddr *)&udp_out_addr, sizeof(udp_out_addr));
-            if (sent_bytes < 0) {
-                perror("Error sending OSD string over UDP");
-            }
-        } else {
-            // Write to /tmp/MSPOSD.msg
-            FILE *file = fopen("/tmp/MSPOSD.msg", "w");
-            if (file == NULL) {
-                perror("Error opening /tmp/MSPOSD.msg");
-                continue; // Skip this iteration if the file cannot be opened
-            }
+				if (sent_bytes < 0) {
+					perror("Error sending OSD string over UDP");
+				}
+			} else {
+				// Write to /tmp/MSPOSD.msg
+				FILE *file = fopen("/tmp/MSPOSD.msg", "w");
+				if (file == NULL) {
+					perror("Error opening /tmp/MSPOSD.msg");
+					continue; // Skip this iteration if the file cannot be opened
+				}
 
-            if (fwrite(full_osd_string, sizeof(char), strlen(full_osd_string), file) != strlen(full_osd_string)) {
-                perror("Error writing to /tmp/MSPOSD.msg");
-            }
+				if (fwrite(full_osd_string, sizeof(char), strlen(full_osd_string), file) != strlen(full_osd_string)) {
+					perror("Error writing to /tmp/MSPOSD.msg");
+				}
 
-            fclose(file);
-        }
+				fclose(file);
+			}
+		}
+	    // Don't continue updating OSD until initialized
+		
+		while (!initialized_by_first_message) {
+			sleep(1);  // Wait until initialized_by_first_message becomes true
+		}
+		
     }
     return NULL;
 }
-
-
 
 bool value_chooses_profile(int input_value) {
     // Get the appropriate profile based on input
@@ -927,6 +989,7 @@ void start_selection(int rssi_score, int snr_score, int recovered) {
 
     // Combine rssi and snr by weight
 	float combined_value_float = rssi_score * rssi_weight + snr_score * snr_weight;
+	int osd_raw_score = (int)combined_value_float;
 
 	// Deduct penalty if it is active
 	if (applied_penalty > 0) {
@@ -941,6 +1004,10 @@ void start_selection(int rssi_score, int snr_score, int recovered) {
 
 	// Apply exponential smoothing
     smoothed_combined_value = (chosen_smoothing_factor * combined_value_float + (1 - chosen_smoothing_factor) * smoothed_combined_value);
+
+	int osd_smoothed_score = (int)smoothed_combined_value;
+	// update score_related osd string
+	sprintf(global_score_related_osd, "og %d, smthd %d", osd_raw_score, osd_smoothed_score);
 
 	// Check if enough time has passed
     long time_diff_ms = (current_time.tv_sec - last_exec_time.tv_sec) * 1000 + (current_time.tv_nsec - last_exec_time.tv_nsec) / 1000000;
@@ -1147,41 +1214,38 @@ long get_wlan0_tx_dropped() {
 }
 
 void *periodic_tx_dropped(void *arg) {
-    const char charset[] = "abcdefghijklmnopqrstuvwxyz"; // Lowercase letters
-    static int seeded = 0;
+    
+    const char *idrCommand = idrCommandTemplate;
 
+	// Wait until initialized_by_first_message
+	while (!initialized_by_first_message) {
+		sleep(1);
+	}
+	
     while (1) {
         long latest_tx_dropped = get_wlan0_tx_dropped();
 
-        if (allow_rq_kf_by_tx_d && prevSetGop > 0.5 && latest_tx_dropped > 0) {
+		struct timespec current_time;
+        clock_gettime(CLOCK_MONOTONIC, &current_time);
+        long elapsed_ms = (current_time.tv_sec - last_keyframe_request_time.tv_sec) * 1000 +
+                          (current_time.tv_nsec - last_keyframe_request_time.tv_nsec) / 1000000;
+
+        if (latest_tx_dropped > 0 && elapsed_ms >= request_keyframe_interval_ms && allow_rq_kf_by_tx_d && prevSetGop > 0.5) {
          
-            // Seed the random number generator (once per program execution)
-            if (!seeded) {
-                srand((unsigned int)time(NULL));
-                seeded = 1;
-            }
-
-            // Generate a random string of lowercase letters
-            char random_string[4 + 1];
-            for (int i = 0; i < 4; i++) {
-                random_string[i] = charset[rand() % (sizeof(charset) - 1)];
-            }
-            random_string[4] = '\0'; // Null terminator
-
-            // Create the keyframe request string
-            char keyframe_request[64];
-            snprintf(keyframe_request, sizeof(keyframe_request), "special:request_keyframe:%s", random_string);
-
-            // Pass the generated string to the second function
-            special_command_message(keyframe_request);
-
-            if (verbose_mode) {
-                printf("Requesting keyframe for locally dropped tx packet\n");
-            }
-
+			// Request new keyframe
+			char quotedCommand[BUFFER_SIZE];
+			snprintf(quotedCommand, sizeof(quotedCommand), "\"%s\"", idrCommand);
+					
+			system(quotedCommand);
+			last_keyframe_request_time = current_time;
+			total_keyframe_requests_xtx++;
+					
+			if (verbose_mode) {
+				printf("Requesting keyframe for locally dropped tx packet\n");
+			}
         }
 
-        // Sleep for 100 milliseconds (100000 microseconds)
+        // Sleep for 100ms
         usleep(100000);  
     }
 }
@@ -1196,7 +1260,7 @@ void *count_messages(void *arg) {
         pthread_mutex_unlock(&count_mutex);
 
         pthread_mutex_lock(&pause_mutex);
-        if (local_count == 0 && !paused) {
+        if (initialized_by_first_message && local_count == 0 && !paused) {
             printf("No messages received in %dms, sending 999\n", fallback_ms);
             start_selection(999, 1000, 0);
 		} else {
@@ -1277,9 +1341,11 @@ void process_message(const char *msg) {
     free(msgCopy);
 
 	// Create osd string with gs information
-	sprintf(global_gs_stats_osd, "rssi%d, snr%d fec%d",
+	sprintf(global_gs_stats_osd, "rssi%d, %d\nsnr%d, %d\nfec%d",
 				rssi1,
+				link_value_rssi,
 				snr1,
+				link_value_snr,
 				recovered);
 
 	// Only proceed with time synchronization if it hasn't been set yet
@@ -1394,8 +1460,16 @@ int main(int argc, char *argv[]) {
 
     printf("Listening on UDP port %d, IP: %s...\n", port, ip);
 	
+	// Find out wifi card
 	determine_tx_power_equation();
     printf("TX Power Factor: %d\n", tx_factor);
+
+	// Get any required values from wfb.yaml (eg ldpc_tx and stbc)
+	if (get_card_info_from_yaml) {
+		load_from_vtx_info_yaml();
+	}
+	//Display S	and L
+	printf("ldpc_tx: %d\nstbc: %d\n", ldpc_tx, stbc);
 	
 	// Get resolution
 	if (get_resolution() != 0) {
@@ -1424,7 +1498,7 @@ int main(int argc, char *argv[]) {
     // Check if roi_focus_mode is enabled and call the setup_roi function
     if (roi_focus_mode) {
         if (setup_roi() != 0) {
-            printf("Failed to set up focus mode regions based on majestic resolution. You may have to do it manually.\n");
+            printf("Failed to set up focus mode regions based on majestic resolution\n");
         } else {
             printf("Focus mode regions set in majestic.yaml\n");
         }
@@ -1451,6 +1525,9 @@ int main(int argc, char *argv[]) {
             perror("recvfrom failed");
             break;
         }
+
+		initialized_by_first_message = true;
+
 
         // Increment message count
         pthread_mutex_lock(&count_mutex);
