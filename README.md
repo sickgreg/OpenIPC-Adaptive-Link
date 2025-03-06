@@ -79,7 +79,7 @@ OR Auto-install on drone --> run this (fetches and installs latest pre-release, 
 
 ```
 cd /etc
-curl -L -o alink_install.sh https://raw.githubusercontent.com/sickgreg/OpenIPC-Adaptive-Link/refs/heads/main/alink_install.sh
+sudo curl -L -o alink_install.sh https://raw.githubusercontent.com/sickgreg/OpenIPC-Adaptive-Link/refs/heads/main/alink_install.sh
 chmod +x alink_install.sh
 ./alink_install.sh drone install
 reboot
