@@ -3,8 +3,6 @@
 
 Warning: Mindfully set power levels appropriately in /etc/txprofiles.conf.  Default is an attempt at MarioAIO-safe, max 30 (Which is quite low for a lot of cards). 
 
-About the files above. There are some older versions eg 42q etc still there for reference. Current code for latest release is in alink_drone.c (and it's conf files alink.conf and txprofiles.conf) and alink_gs. 
-
 ### How Adaptive-Link works
 
   A wireless link can handle higher data-rates over short distances with strong signal than long distances and weak signal conditions.  OpenIPC on it's own lets us choose a single link-speed and a single video bitrate that we think can fit in said link.  Default at the time of writing is 4mbps video bitrate over a 20Mhz channel @ MCS1 long gi with 8/12 forward error correction.  Without needing to understand all those parameters, we can simply summarize them as "a medium to long range link speed with low quality video" profile.  A compromise of both range and image quality.  This is great if you don't need to fly really far away or don't want to fly really close with nice looking high bitrates.  For ease of operation... consider leaving it on default and fly!  Have fun.
@@ -68,7 +66,15 @@ If folks cannot achieve 10mbps with their setup, then having alink select 20mbps
 
 ### Installation
 
+## Drone
 
+Most recent ssc338q and ssc30kq OpenIPC firmware should already include adaptive-link, thuogh it may not be enabled by default.  You can have it run at startup by adding the following line to `/etc/rc.local`
+
+```
+alink_drone &
+```  
+
+## Manual install method for drone
 1. A recent OpenIPC firmware for Sigmastar including wfb tunnel is required. It is recommended to upgrade camera to latest OpenIPC (Warning: All files will be overwritten)
 
 `sysupgrade -k -r -n`
@@ -79,19 +85,21 @@ OR Auto-install on drone --> run this (fetches and installs latest pre-release, 
 
 ```
 cd /etc
-curl -L -o alink_install.sh https://raw.githubusercontent.com/sickgreg/OpenIPC-Adaptive-Link/refs/heads/main/alink_install.sh
+curl -L -o alink_install.sh https://raw.githubusercontent.com/OpenIPC/adaptive-link/refs/heads/main/alink_install.sh
 chmod +x alink_install.sh
 ./alink_install.sh drone install
 reboot
 ```
 Config files are `/etc/txprofiles.conf` and `/etc/alink.conf`
 
-3. PixelPilot Android... Still testing early pre-release.  Stay tuned.
+## Ground Station
 
-4. Auto-install on Radxa ground station
+Most recent radxa image from Johhn or CC should include alink, though it may not be enabled by default
+
+## Install on Radxa ground station
 
 ```
-sudo curl -L -o alink_install.sh https://raw.githubusercontent.com/sickgreg/OpenIPC-Adaptive-Link/refs/heads/main/alink_install.sh
+sudo curl -L -o alink_install.sh https://raw.githubusercontent.com/sickgreg/OpenIPC/adaptive-link/refs/heads/main/alink_install.sh
 sudo chmod +x alink_install.sh
 sudo ./alink_install.sh gs install
 ```
@@ -100,7 +108,7 @@ Service will be added to systemd. Use stop | start | disable | enable | status w
 
 `alink_gs.conf` config file will be created in `/config/` if it exists or `/home/radxa` if it exists or finally `/etc` if neither of those exist
 
-5.  Set power level on your ground station wifi card(s)
+2.  Set power level on your ground station wifi card(s)
 
 alink_drone listens for an informative_heartbeat from the ground station to decide on link speed and range and therefor video quality.  If it doesn't hear anything for a preset period of time, it will fall back to profile 999, which is set to MCS 0 for the furthest possible range.  If you're not getting out of this mode, the drone isn't hearing the ground station.
 
