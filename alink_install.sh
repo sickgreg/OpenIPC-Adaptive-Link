@@ -13,8 +13,8 @@ WFBGS_CFG=/etc/wifibroadcast.cfg
 WFBGS_CFG2=/home/radxa/gs/wfb.sh
 
 # Variables for repository
-REPO_OWNER="sickgreg"
-REPO_NAME="OpenIPC-Adaptive-Link"
+REPO_OWNER="OpenIPC"
+REPO_NAME="adaptive-link"
 
 # Function to fetch the latest release asset URL
 github_asset_url() {
