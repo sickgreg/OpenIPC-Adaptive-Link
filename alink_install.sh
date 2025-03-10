@@ -11,6 +11,8 @@ UDP_PORT=9999
 LOG_INTERVAL=100
 WFBGS_CFG=/etc/wifibroadcast.cfg
 WFBGS_CFG2=/home/radxa/gs/wfb.sh
+WFBGS_CFG3=/gs/wfb.sh
+
 
 # Variables for repository
 REPO_OWNER="OpenIPC"
@@ -64,12 +66,21 @@ update_log_interval() {
 		fi
 	fi
 	
+	if [ -f "$WFBGS_CFG3" ]; then
+		# If the file exists, update the log_interval here too (CC's GS)
+		if grep -q "log_interval" "$WFBGS_CFG3"; then
+			sed -i 's/log_interval.*/log_interval = '${LOG_INTERVAL}'/' "$WFBGS_CFG3"
+		else
+			sed -i '/\[common\]/a log_interval = '${LOG_INTERVAL}'' "$WFBGS_CFG3"
+		fi
+	fi
+	
 }
 
 # Ground Station setup
 gs_setup() {
 	FILE_NAME=alink_gs
-	FILE=/usr/bin/$FILE_NAME
+	FILE=/usr/local/bin/$FILE_NAME
 # Check if /config directory exists
 if [ -d "/config" ]; then
   # If /config exists, use it
@@ -110,6 +121,8 @@ EOF
 
 			# Start service for testing
 			echo "Starting Adaptive Link temporarily for testing..."
+			update_log_interval
+			
 			$FILE --config $FILE_CONF &
 			sleep 5 && kill $!
 
